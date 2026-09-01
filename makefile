@@ -13,7 +13,7 @@ endif
 SRC := src/util/log.c
 
 MAIN_SRC := $(SRC) src/main.c
-TEST_SRC := $(SRC) tests/test_bstream.c
+TEST_SRC := $(SRC) tests/test_common.c
 
 MAIN_OBJ := $(MAIN_SRC:.c=.o)
 TEST_OBJ := $(TEST_SRC:.c=.o)
@@ -32,7 +32,7 @@ test: test-bin
 	./test-bin
 
 run: mrock
-	./mrock -v
+	./mrock
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $
