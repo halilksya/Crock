@@ -35,10 +35,10 @@ run: mrock
 	./mrock
 
 %.o: %.c
-	$(CC) $(CFLAGS) -c -o $@ $
+	$(CC) $(CFLAGS) -c -o $@ $<
 
 DEPS := $(MAIN_OBJ:.o=.d) $(TEST_OBJ:.o=.d)
--include $(DEPS)
+-include $(wildcard $(DEPS))
 
 clean:
 	rm -f mrock test-bin $(MAIN_OBJ) $(TEST_OBJ) $(DEPS)

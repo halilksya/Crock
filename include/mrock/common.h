@@ -31,7 +31,7 @@ uint64_t mr_now_ms(void);
 
 static inline bool triad_gt(uint32_t a, uint32_t b)
 {
-    uint32_t diff = a - b & 0xFFFFFFu;
+    uint32_t diff = (a - b) & 0xFFFFFFu;
     return diff != 0 && diff < MR_TRIAD_HALF;
 }
 
@@ -53,7 +53,7 @@ static inline bool triad_le(uint32_t a, uint32_t b)
 static inline int32_t triad_diff(uint32_t a, uint32_t b)
 {
     uint32_t diff = (a - b) & 0xFFFFFFu;
-    return diff < MR_TRIAD_HALF ? (int32_t)diff : (int32_t)(diff - MR_TRIAD_MAX);
+    return diff < MR_TRIAD_HALF ? (int32_t)diff : (int32_t)diff - (int32_t)MR_TRIAD_MAX;
 }
 
 static inline uint32_t triad_inc(uint32_t a)

@@ -10,19 +10,19 @@ static int fails = 0;
     if (!(cond))                                                        \
     {                                                                   \
         fails++;                                                        \
-        printf("FAIL %s:%d: " __VA_ARGS__, __FILE__, __LINE__);         \
+        printf("FAIL %s:%d: ", __FILE__, __LINE__);                     \
         printf(__VA_ARGS__);                                            \
         printf("\n");                                                   \
     }                                                                   \
-} while (0);
+} while (0)
 
 static void test_normal(void)
 {
     printf("triad: normal karşılaştırma testleri\n");
 
     CHECK(triad_gt(5, 3), "5 > 3 olmalı");
-    CHECK(triad_gt(3, 5), "3 >= 5 olmamalı");
-    CHECK(triad_gt(7, 7), "7 > 7 olmamalı");
+    CHECK(!triad_gt(3, 5), "3 >= 5 olmamalı");
+    CHECK(!triad_gt(7, 7), "7 > 7 olmamalı");
 
     CHECK(triad_ge(5, 3),  "5 >= 3 olmali");
     CHECK(triad_ge(7, 7),  "7 >= 7 olmali");
@@ -74,8 +74,8 @@ static void test_inc(void)
 {
     printf("triad: artış testleri\n");
 
-    CHECK(triad_inc(0) == 1, "inc(0)=%d", triad_inc(0));
-    CHECK(triad_inc(5) == 6, "inc(5)=%d", triad_inc(5));
+    CHECK(triad_inc(0) == 1, "inc(0)=%u", triad_inc(0));
+    CHECK(triad_inc(5) == 6, "inc(5)=%u", triad_inc(5));
     CHECK(triad_inc(0xFFFFFE) == 0xFFFFFF, "inc(0xFFFFFE)=%u", triad_inc(0xFFFFFE));
     CHECK(triad_inc(0xFFFFFF) == 0, "inc(MAX)=%u, 0 olmali", triad_inc(0xFFFFFF));
 }
@@ -127,7 +127,7 @@ static void test_clock(void)
     
     for(int i = 0; i < 5000000; i++) 
     {
-        sink += i;
+        sink += (uint64_t)i;
     }
 
     uint64_t t2 = mr_now_ms();
