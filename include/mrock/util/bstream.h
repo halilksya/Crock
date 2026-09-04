@@ -15,7 +15,7 @@ typedef struct
 
 void bs_read_init(bs_t *s, const void *buf, size_t len);
 void bs_write_init(bs_t *s, void *buf, size_t cap);
-int bs_dyn_int(bs_t *s, size_t initial_cap);
+int bs_dyn_init(bs_t *s, size_t initial_cap);
 void bs_free(bs_t *s);
 
 static inline size_t bs_remaining(const bs_t *s)

@@ -70,7 +70,10 @@ static int wr_ok(bs_t *s, size_t n)
     if(s->err)
         return 0;
 
-    if(s->pos + n > s->cap)
+    if(s->pos + n <= s->cap)
+        return 1;
+
+    if(!s->owned)
     {
         s->err = 1;
         return 0;
@@ -216,9 +219,7 @@ uint64_t bs_rvaru64(bs_t *s)
 {
     uint64_t v = 0;
     for(int shift = 0; shift < 70; shift += 7)
-    {
-        uint64_t byte = bs_ru8(s);
-        
+    {   
         if(!rd_ok(s, 1))
             return 0;
         
@@ -238,9 +239,7 @@ uint32_t bs_rvaru32(bs_t *s)
     uint32_t v = 0;
 
     for(int shift = 0; shift < 35; shift += 7)
-    {
-        uint8_t byte = bs_ru8(s);
-        
+    {      
         if(!rd_ok(s, 1))
             return 0;
         
@@ -259,14 +258,14 @@ int32_t bs_rvari32(bs_t *s)
 {
     uint32_t u = bs_rvaru32(s);
     
-    return (int32_t)((u >> 1) ^ -(int32_t)(u & 1));
+    return (int32_t)(u >> 1) ^ -(int32_t)(u & 1);
 }
 
 int64_t bs_rvari64(bs_t *s)
 {
     uint64_t u = bs_rvaru64(s);
     
-    return (int64_t)((u >> 1) ^ -(int64_t)(u & 1));
+    return (int64_t)(u >> 1) ^ -(int64_t)(u & 1);
 }
 
 const uint8_t *bs_rbytes(bs_t *s, size_t n)
@@ -429,35 +428,38 @@ void bs_wf32le(bs_t *s, float f)
     bs_wu32le(s, bits);
 }
 
-void bs_wvaru32(bs_t *s, uint32_t v)
+void bs_wvaru64(bs_t *s, uint64_t v)
 {
-    do 
+    do
     {
-        uint8_t byte = v & 0x7F;
+        uint8_t byte = (uint8_t)(v & 0x7F);
         v >>= 7;
         if(v != 0)
             byte |= 0x80;
         bs_wu8(s, byte);
-    } while(v != 0);
+    } while(v != 0 && !s->err);
 }
 
-void bs_wvaru32(bs_t *s, int32_t v)
+void bs_wvaru32(bs_t *s, uint32_t v)
 {
-    bs_wvaru32(s, v);
+    bs_wvaru64(s, v);
 }
 
 void bs_wvari32(bs_t *s, int32_t v)
 {
-    bs_wvaru32(s, (uint32_t)v << 1 ^ (v >> 31));
+    bs_wvaru32(s, ((uint32_t)v << 1) ^ (uint32_t)(v >> 31));
 }
 
 void bs_wvari64(bs_t *s, int64_t v)
 {
-    bs_wvaru64(s, (uint64_t)v << 1 ^ (v >> 63));
+    bs_wvaru64(s, ((uint64_t)v << 1) ^ (uint64_t)(v >> 63));
 }
 
 void bs_wbytes(bs_t *s, const void *data, size_t n)
 {
+    if(n == 0)
+        return;
+    
     if(!wr_ok(s, n))
         return;
 
