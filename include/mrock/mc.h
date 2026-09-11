@@ -1,0 +1,7 @@
+#ifndef MCROCK_MC_H
+#define MCROCK_MC_H
+
+#define MCROCK_VERSION 2168
+#define MCROCK_VERSION_STRING "1.26.44"
+
+#endif
