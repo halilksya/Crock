@@ -11,7 +11,8 @@ LDFLAGS += -fsanitize=address,undefined
 endif
 
 SRC := src/util/log.c \
-       src/util/bstream.c
+       src/util/bstream.c \
+       src/net/addr.c
 
 MAIN_SRC         := $(SRC) src/main.c
 TEST_COMMON_SRC  := $(SRC) tests/test_common.c
