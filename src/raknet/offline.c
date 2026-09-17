@@ -136,7 +136,7 @@ static void handle_open2(raknet_server_t *server, bs_t *in, const mr_addr_t *fro
         raknet_server_send(server, from, out.buf, out.len);
 
     char addr_str[64];
-    mr_addr_to_str(from, addr_str, sizeof(addr_str));
+    mr_addr_to_string(from, addr_str, sizeof(addr_str));
     log_info("opening session: %s guid=%016llx mtu=%u", addr_str, (unsigned long long)client_guid, mtu);
 
     //TODO: raknet_session_create(server, from, client_guid, mtu);

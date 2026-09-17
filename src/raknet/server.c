@@ -204,7 +204,7 @@ void raknet_server_run(raknet_server_t *server)
             if(mr_addr_from_sockaddr(&from, &ss) < 0)
                 continue;
 
-            if(raknet_offline_handle_packet(server, recv_buf, (size_t)recv_len, &from))
+            if(raknet_offline_handle(server, recv_buf, (size_t)recv_len, &from))
                 continue;
 
             server -> bad_packets++;

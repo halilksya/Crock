@@ -23,7 +23,7 @@ typedef struct raknet_server
     bool running;
 } raknet_server_t;
 
-int raknet_server_init(raknet_server_t *server, int family, uint16_t port);
+int raknet_server_init(raknet_server_t *server, uint16_t port);
 void raknet_server_close(raknet_server_t *server);
 void raknet_server_run(raknet_server_t *server);
 
