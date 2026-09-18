@@ -10,7 +10,7 @@ size_t raknet_ack_encode(bs_t *stream, const uint32_t *sequences, size_t count, 
     if(count == 0)
         return 0;
 
-    uint8_t flags = RAKNET_FLAG_VALID || (is_ack ? RAKNET_FLAG_ACK : RAKNET_FLAG_NAK);
+    uint8_t flags = RAKNET_FLAG_VALID | (is_ack ? RAKNET_FLAG_ACK : RAKNET_FLAG_NAK);
     bs_wu8(stream, flags);
     size_t count_offset = stream->pos;
 

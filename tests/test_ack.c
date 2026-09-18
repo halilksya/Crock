@@ -151,22 +151,22 @@ static void test_malformed(void)
     printf("raknet: ack malformed tests\n");
 
     uint32_t output[64];
-    uint8_t buf[] = { 0x01, 0x00, 0x00, 0x64, 0x00, 0x00, 0x0A, 0x00, 0x00 };
+    uint8_t buf[] = { 0x00, 0x01, 0x00, 0x64, 0x00, 0x00, 0x0A, 0x00, 0x00 };
     bs_t reader;
     bs_read_init(&reader, buf, sizeof(buf));
     raknet_ack_decode(&reader, output, 64);
     CHECK(reader.err, "start > end should be rejected");
 
-    uint8_t buf2[] = { 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF };
+    uint8_t buf2[] = { 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF };
     bs_read_init(&reader, buf2, sizeof(buf2));
     raknet_ack_decode(&reader, output, 64);
     CHECK(reader.err, "huge range should be rejected");
 
-    uint8_t buf3[] = { 0x0A, 0x00, 0x01, 0x05, 0x00, 0x00 };
+    uint8_t buf3[] = { 0x00, 0x0A, 0x01, 0x05, 0x00, 0x00 };
     bs_read_init(&reader, buf3, sizeof(buf3));
-    raknet_ack_decode(&reader, output, 64);
+    size_t n = raknet_ack_decode(&reader, output, 64);
     CHECK(reader.err, "truncated record should be rejected");
-    CHECK(reader.pos == 1, "decoded %zu before running out, expected 1", reader.pos);
+    CHECK(n == 1, "decoded %zu before running out, expected 1", n);
 }
 
 static void test_flags(void)

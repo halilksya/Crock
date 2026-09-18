@@ -49,7 +49,7 @@ test-frame: $(TEST_FRAME_OBJ)
 test-ack: $(TEST_ACK_OBJ)
 	$(CC) $(LDFLAGS) -o $@ $^
 
-test: test-common test-bstream test-frame
+test: test-common test-bstream test-frame test-ack
 	./test-common
 	./test-bstream
 	./test-frame
@@ -66,6 +66,6 @@ DEPS := $(MAIN_OBJ:.o=.d) $(TEST_COMMON_OBJ:.o=.d) \
 -include $(wildcard $(DEPS))
 
 clean:
-	rm -f mrock test-common test-bstream test-frame \
+	rm -f mrock test-common test-bstream test-frame test-ack \
 	      $(MAIN_OBJ) $(TEST_COMMON_OBJ) $(TEST_BSTREAM_OBJ) \
 	      $(TEST_FRAME_OBJ) $(TEST_ACK_OBJ) $(DEPS)
