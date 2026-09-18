@@ -14,15 +14,18 @@ SRC := src/util/log.c \
        src/util/bstream.c \
        src/net/addr.c \
        src/raknet/server.c \
-       src/raknet/offline.c
+       src/raknet/offline.c \
+       src/raknet/frame.c
 
 MAIN_SRC         := $(SRC) src/main.c
 TEST_COMMON_SRC  := $(SRC) tests/test_common.c
 TEST_BSTREAM_SRC := $(SRC) tests/test_bstream.c
+TEST_FRAME_SRC   := $(SRC) tests/test_frame.c
 
 MAIN_OBJ         := $(MAIN_SRC:.c=.o)
 TEST_COMMON_OBJ  := $(TEST_COMMON_SRC:.c=.o)
 TEST_BSTREAM_OBJ := $(TEST_BSTREAM_SRC:.c=.o)
+TEST_FRAME_OBJ   := $(TEST_FRAME_SRC:.c=.o)
 
 .PHONY: all test clean run
 
@@ -37,9 +40,13 @@ test-common: $(TEST_COMMON_OBJ)
 test-bstream: $(TEST_BSTREAM_OBJ)
 	$(CC) $(LDFLAGS) -o $@ $^
 
-test: test-common test-bstream
+test-frame: $(TEST_FRAME_OBJ)
+	$(CC) $(LDFLAGS) -o $@ $^
+
+test: test-common test-bstream test-frame
 	./test-common
 	./test-bstream
+	./test-frame
 
 run: mrock
 	./mrock
@@ -47,9 +54,11 @@ run: mrock
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-DEPS := $(MAIN_OBJ:.o=.d) $(TEST_COMMON_OBJ:.o=.d) $(TEST_BSTREAM_OBJ:.o=.d)
+DEPS := $(MAIN_OBJ:.o=.d) $(TEST_COMMON_OBJ:.o=.d) \
+        $(TEST_BSTREAM_OBJ:.o=.d) $(TEST_FRAME_OBJ:.o=.d)
 -include $(wildcard $(DEPS))
 
 clean:
-	rm -f mrock test-common test-bstream \
-	      $(MAIN_OBJ) $(TEST_COMMON_OBJ) $(TEST_BSTREAM_OBJ) $(DEPS)
+	rm -f mrock test-common test-bstream test-frame \
+	      $(MAIN_OBJ) $(TEST_COMMON_OBJ) $(TEST_BSTREAM_OBJ) \
+	      $(TEST_FRAME_OBJ) $(DEPS)
