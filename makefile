@@ -22,11 +22,13 @@ MAIN_SRC         := $(SRC) src/main.c
 TEST_COMMON_SRC  := $(SRC) tests/test_common.c
 TEST_BSTREAM_SRC := $(SRC) tests/test_bstream.c
 TEST_FRAME_SRC   := $(SRC) tests/test_frame.c
+TEST_ACK_SRC     := $(SRC) tests/test_ack.c
 
 MAIN_OBJ         := $(MAIN_SRC:.c=.o)
 TEST_COMMON_OBJ  := $(TEST_COMMON_SRC:.c=.o)
 TEST_BSTREAM_OBJ := $(TEST_BSTREAM_SRC:.c=.o)
 TEST_FRAME_OBJ   := $(TEST_FRAME_SRC:.c=.o)
+TEST_ACK_OBJ     := $(TEST_ACK_SRC:.c=.o)
 
 .PHONY: all test clean run
 
@@ -44,10 +46,14 @@ test-bstream: $(TEST_BSTREAM_OBJ)
 test-frame: $(TEST_FRAME_OBJ)
 	$(CC) $(LDFLAGS) -o $@ $^
 
+test-ack: $(TEST_ACK_OBJ)
+	$(CC) $(LDFLAGS) -o $@ $^
+
 test: test-common test-bstream test-frame
 	./test-common
 	./test-bstream
 	./test-frame
+	./test-ack
 
 run: mrock
 	./mrock
@@ -56,10 +62,10 @@ run: mrock
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 DEPS := $(MAIN_OBJ:.o=.d) $(TEST_COMMON_OBJ:.o=.d) \
-        $(TEST_BSTREAM_OBJ:.o=.d) $(TEST_FRAME_OBJ:.o=.d)
+        $(TEST_BSTREAM_OBJ:.o=.d) $(TEST_FRAME_OBJ:.o=.d) $(TEST_ACK_OBJ:.o=.d)
 -include $(wildcard $(DEPS))
 
 clean:
 	rm -f mrock test-common test-bstream test-frame \
 	      $(MAIN_OBJ) $(TEST_COMMON_OBJ) $(TEST_BSTREAM_OBJ) \
-	      $(TEST_FRAME_OBJ) $(DEPS)
+	      $(TEST_FRAME_OBJ) $(TEST_ACK_OBJ) $(DEPS)
