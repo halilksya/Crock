@@ -1,4 +1,4 @@
-#include "mrock/rocket/frame.h"
+#include "mrock/raknet/frame.h"
 
 #include <string.h>
 #include <stdlib.h>
@@ -46,15 +46,22 @@ void raknet_frame_decode(bs_t *stream, raknet_frame_t *frame)
     frame -> payload_len = (uint16_t)byte_len;
 
     if(RAKNET_IS_RELIABLE(frame -> reliability))
-        frame -> reliable_index = bs_ru24be(stream);
+        frame -> reliable_index = bs_ru24le(stream);
 
     if(RAKNET_IS_SEQUENCED(frame -> reliability))
-        frame -> sequenced_index = bs_ru24be(stream);
+        frame -> sequenced_index = bs_ru24le(stream);
 
     if(RAKNET_IS_ORDERED(frame -> reliability))
     {
-        frame -> ordered_index = bs_ru24be(stream);
+        frame -> ordered_index = bs_ru24le(stream);
         frame -> order_channel = bs_ru8(stream);
+        
+            if(frame -> order_channel >= RAKNET_MAX_ORDER_CHANNELS)
+        {
+            stream -> err = 1;
+            return;
+        }
+
     }
 
     if(frame -> is_split)
@@ -63,14 +70,14 @@ void raknet_frame_decode(bs_t *stream, raknet_frame_t *frame)
         frame -> split_id = bs_ru16be(stream);
         frame -> split_index = bs_ru32be(stream);
 
-        if(frame -> split_count > 0 || frame -> split_count > RAKNET_MAX_SPLIT_PART_COUNT || frame -> split_index >= frame -> split_count)
+        if(frame -> split_count == 0 || frame -> split_count > RAKNET_MAX_SPLIT_PART_COUNT || frame -> split_index >= frame -> split_count)
         {
             stream -> err = 1;
             return;
         }
     }
 
-    frame -> payload = (uint8_t *)bs_rptr(stream);
+    frame -> payload = (uint8_t *)bs_rbytes(stream, byte_len);
     frame -> owns_payload = false;
 
     if(!frame -> payload)
