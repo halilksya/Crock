@@ -1,5 +1,6 @@
 #include "mrock/raknet/offline.h"
 #include "mrock/raknet/server.h"
+#include "mrock/raknet/session.h"
 #include "mrock/util/bstream.h"
 
 #include <string.h>
@@ -46,7 +47,7 @@ static void handle_ping(raknet_server_t *server, bs_t *in, const mr_addr_t *from
     bs_wu64be(&out, server -> guid);
     write_magic(&out);
     bs_wstr_be(&out, server -> motd); 
-    
+        
     if(!out.err)
         raknet_server_send(server, from, out.buf, out.len);
 }
@@ -79,12 +80,12 @@ static void handle_open1(raknet_server_t *server, bs_t *in, const mr_addr_t *fro
     }
 
     size_t mtu = datagram_len + RAKNET_UDP_HEADER_SIZE;
-    
+        
     if(mtu < RAKNET_MIN_MTU)
         mtu = RAKNET_MIN_MTU;
     else if(mtu > RAKNET_MAX_MTU)
         mtu = RAKNET_MAX_MTU;
-    
+        
     uint8_t out_buf[64];
     bs_t out;
     bs_write_init(&out, out_buf, sizeof(out_buf));
@@ -114,12 +115,37 @@ static void handle_open2(raknet_server_t *server, bs_t *in, const mr_addr_t *fro
 
     if(in -> err)
         return;
-    
+
     if(mtu < RAKNET_MIN_MTU)
         mtu = RAKNET_MIN_MTU;
-    
+
     if(mtu > RAKNET_MAX_MTU)
         mtu = RAKNET_MAX_MTU;
+
+    char addr_str[64];
+    mr_addr_to_string(from, addr_str, sizeof(addr_str));
+
+    raknet_session_t *existing = raknet_server_find_session(server, from);
+    if(existing)
+    {
+        raknet_server_remove_session(server, existing);
+        raknet_session_close(existing, RAKNET_DISCONNECT_CLIENT);
+        raknet_session_destroy(existing);
+    }
+
+    raknet_session_t *session = raknet_session_create(server, from, client_guid, mtu);
+    if(!session)
+    {
+        log_debug("session creation failed for %s", addr_str);
+        return;
+    }
+
+    if(raknet_server_add_session(server, session) < 0)
+    {
+        log_debug("server full, rejecting %s", addr_str);
+        raknet_session_destroy(session);
+        return;
+    }
 
     uint8_t out_buf[128];
     bs_t out;
@@ -135,12 +161,7 @@ static void handle_open2(raknet_server_t *server, bs_t *in, const mr_addr_t *fro
     if(!out.err)
         raknet_server_send(server, from, out.buf, out.len);
 
-    char addr_str[64];
-    mr_addr_to_string(from, addr_str, sizeof(addr_str));
     log_info("opening session: %s guid=%016llx mtu=%u", addr_str, (unsigned long long)client_guid, mtu);
-
-    //TODO: raknet_session_create(server, from, client_guid, mtu);
-
 }
 
 int raknet_offline_handle(raknet_server_t *server, const uint8_t *data, size_t len, const mr_addr_t *from)

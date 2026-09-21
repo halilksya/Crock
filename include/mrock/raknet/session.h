@@ -131,4 +131,6 @@ void raknet_send_flush(raknet_session_t *session, uint64_t now_ms);
 
 void raknet_session_on_message(raknet_session_t *session, const uint8_t *payload, size_t len);
 
+void raknet_session_update(raknet_session_t *session, uint64_t now_ms);
+
 #endif

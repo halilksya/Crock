@@ -20,6 +20,15 @@ static inline void bit_clear(uint8_t *bits, size_t offset)
     bits[offset / 8] &= (uint8_t)~(1u << (offset % 8));
 }
 
+static void decode_frames(raknet_session_t *session, bs_t *stream);
+static void handle_frame(raknet_session_t *session, raknet_frame_t *frame);
+static void dispatch_frame(raknet_session_t *session, raknet_frame_t *frame);
+static void handle_split(raknet_session_t *session, raknet_frame_t *frame);
+static void deliver_ordered(raknet_session_t *session, raknet_frame_t *frame);
+
+void raknet_send_on_ack(raknet_session_t *session, uint32_t sequence);
+void raknet_send_on_nack(raknet_session_t *session, uint32_t sequence);
+
 static void slide_window(raknet_recv_layer_t *recv)
 {
     while(bit_get(recv -> seen_bits, 0))
@@ -83,10 +92,8 @@ void raknet_recv_on_frame_set(raknet_session_t *session, bs_t *stream)
 
     decode_frames(session, stream);
 
-    slide_window(recv);  
+    slide_window(recv);
 }
-
-static void handle_frame(raknet_session_t *session, raknet_frame_t *frame);
 
 static void decode_frames(raknet_session_t *session, bs_t *stream)
 {
@@ -109,7 +116,7 @@ static bool reliable_is_duplicate(raknet_recv_layer_t *recv, uint32_t index)
     if(triad_lt(index, recv -> reliable_window_start))
         return true;
 
-    uint32_t offset = triad_diff(index, recv -> reliable_window_start);
+    int32_t offset = triad_diff(index, recv -> reliable_window_start);
 
     if((size_t)offset >= RAKNET_RECV_WINDOW)
     {
@@ -122,7 +129,7 @@ static bool reliable_is_duplicate(raknet_recv_layer_t *recv, uint32_t index)
             bit_set(recv -> reliable_seen_bits, 0);
             return false;
         }
-        
+
         for(uint32_t i = 0; i < slide; i++)
         {
             bit_clear(recv -> reliable_seen_bits, 0);
@@ -138,7 +145,7 @@ static bool reliable_is_duplicate(raknet_recv_layer_t *recv, uint32_t index)
         }
         offset = triad_diff(index, recv -> reliable_window_start);
     }
-    
+
     if(bit_get(recv -> reliable_seen_bits, (size_t)offset))
         return true;
 
@@ -146,14 +153,11 @@ static bool reliable_is_duplicate(raknet_recv_layer_t *recv, uint32_t index)
     return false;
 }
 
-static void hadle_split(raknet_session_t *session, raknet_frame_t *frame);
-static void deliver_ordered(raknet_session_t *session, raknet_frame_t *frame);
-
 static void handle_frame(raknet_session_t *session, raknet_frame_t *frame)
 {
     raknet_recv_layer_t *recv = &session -> recv;
 
-    if(RAKNET_RELIABILITY_IS_RELIABLE(frame -> reliability))
+    if(RAKNET_IS_RELIABLE(frame -> reliability))
     {
         if(reliable_is_duplicate(recv, frame -> reliable_index))
             return;
@@ -161,9 +165,16 @@ static void handle_frame(raknet_session_t *session, raknet_frame_t *frame)
 
     if(frame -> is_split)
     {
-        hadle_split(session, frame);
+        handle_split(session, frame);
         return;
     }
+
+    dispatch_frame(session, frame);
+}
+
+static void dispatch_frame(raknet_session_t *session, raknet_frame_t *frame)
+{
+    raknet_recv_layer_t *recv = &session -> recv;
 
     if(RAKNET_IS_SEQUENCED(frame -> reliability))
     {
@@ -215,7 +226,7 @@ static void deliver_ordered(raknet_session_t *session, raknet_frame_t *frame)
         raknet_session_on_message(session, frame -> payload, frame -> payload_len);
         recv -> next_ordered[channel] = triad_inc(recv -> next_ordered[channel]);
 
-        if(!ensure_order_buffer(recv, channel))
+        if(!recv -> order_buffer[channel])
             return;
 
         for(;;)
@@ -236,7 +247,7 @@ static void deliver_ordered(raknet_session_t *session, raknet_frame_t *frame)
             recv -> next_ordered[channel] = triad_inc(wanted);
         }
         return;
-    } 
+    }
 
     if(triad_lt(frame -> ordered_index, recv -> next_ordered[channel]))
         return;
@@ -258,9 +269,152 @@ static void deliver_ordered(raknet_session_t *session, raknet_frame_t *frame)
 
     if(raknet_frame_own_payload(frame) < 0)
         return;
-    
+
     recv -> order_buffer[channel][slot] = *frame;
     recv -> order_slot_used[channel][slot] = true;
 }
 
-// I'm tired. ^^' 
+static raknet_split_assembly_t *find_split(raknet_session_t *session, uint16_t split_id, uint32_t part_count, uint64_t now)
+{
+    for(size_t i = 0; i < RAKNET_MAX_CONCURRENT_SPLITS; i++)
+    {
+        raknet_split_assembly_t *assembly = &session -> splits[i];
+
+        if(assembly -> in_use && assembly -> split_id == split_id)
+        {
+            if(assembly -> part_count != part_count)
+                return NULL;
+            return assembly;
+        }
+    }
+
+    for(size_t i = 0; i < RAKNET_MAX_CONCURRENT_SPLITS; i++)
+    {
+        raknet_split_assembly_t *assembly = &session -> splits[i];
+        if(assembly -> in_use)
+            continue;
+
+        assembly -> parts = (raknet_frame_t *)calloc(part_count, sizeof(raknet_frame_t));
+        assembly -> part_present = (bool *)calloc(part_count, sizeof(bool));
+
+        if(!assembly -> parts || !assembly -> part_present)
+        {
+            free(assembly -> parts);
+            free(assembly -> part_present);
+            assembly -> parts = NULL;
+            assembly -> part_present = NULL;
+            return NULL;
+        }
+
+        assembly -> in_use = true;
+        assembly -> split_id = split_id;
+        assembly -> part_count = part_count;
+        assembly -> parts_received = 0;
+        assembly -> started_ms = now;
+        return assembly;
+    }
+    return NULL;
+}
+
+static void split_reset(raknet_split_assembly_t *assembly)
+{
+    if(assembly -> parts)
+    {
+        for(uint32_t i = 0; i < assembly -> part_count; i++)
+        {
+            if(assembly -> part_present[i])
+                raknet_frame_free(&assembly -> parts[i]);
+        }
+        free(assembly -> parts);
+        free(assembly -> part_present);
+    }
+    memset(assembly, 0, sizeof(*assembly));
+}
+
+static void handle_split(raknet_session_t *session, raknet_frame_t *frame)
+{
+    raknet_split_assembly_t *assembly = find_split(session, frame -> split_id, frame -> split_count, mr_now_ms());
+    if(!assembly)
+        return;
+
+    if(assembly -> part_present[frame -> split_index])
+        return;
+
+    if(raknet_frame_own_payload(frame) < 0)
+        return;
+
+    assembly -> parts[frame -> split_index] = *frame;
+    assembly -> part_present[frame -> split_index] = true;
+    assembly -> parts_received++;
+
+    if(assembly -> parts_received < assembly -> part_count)
+        return;
+
+    size_t total = 0;
+    for(uint32_t i = 0; i < assembly -> part_count; i++)
+        total += assembly -> parts[i].payload_len;
+
+    if(total == 0 || total > RAKNET_MAX_SPLIT_PART_COUNT * RAKNET_MAX_MTU)
+    {
+        split_reset(assembly);
+        return;
+    }
+
+    uint8_t *merged = (uint8_t *)malloc(total);
+    if(!merged)
+    {
+        split_reset(assembly);
+        return;
+    }
+
+    size_t offset = 0;
+    for(uint32_t i = 0; i < assembly -> part_count; i++)
+    {
+        memcpy(merged + offset, assembly -> parts[i].payload, assembly -> parts[i].payload_len);
+        offset += assembly -> parts[i].payload_len;
+    }
+
+    raknet_frame_t whole = assembly -> parts[0];
+    whole.is_split = false;
+    whole.payload = merged;
+    whole.payload_len = (uint16_t)total;
+    whole.owns_payload = false;
+
+    split_reset(assembly);
+    dispatch_frame(session, &whole);
+    free(merged);
+}
+
+void raknet_recv_on_ack(raknet_session_t *session, bs_t *stream)
+{
+    uint32_t sequence[RAKNET_MAX_ACK_SEQUENCES];
+    size_t count = raknet_ack_decode(stream, sequence, RAKNET_MAX_ACK_SEQUENCES);
+
+    for(size_t i = 0; i < count; i++)
+        raknet_send_on_ack(session, sequence[i]);
+}
+
+void raknet_recv_on_nack(raknet_session_t *session, bs_t *stream)
+{
+    uint32_t sequence[RAKNET_MAX_ACK_SEQUENCES];
+    size_t count = raknet_ack_decode(stream, sequence, RAKNET_MAX_ACK_SEQUENCES);
+
+    for(size_t i = 0; i < count; i++)
+        raknet_send_on_nack(session, sequence[i]);
+}
+
+void raknet_recv_expire_splits(raknet_session_t *session, uint64_t now)
+{
+    for(size_t i = 0; i < RAKNET_MAX_CONCURRENT_SPLITS; i++)
+    {
+        raknet_split_assembly_t *assembly = &session -> splits[i];
+        if(!assembly -> in_use)
+            continue;
+
+        if(now - assembly -> started_ms < 30000)
+            continue;
+
+        log_debug("expiring incomplete split %u (%u/%u parts)", assembly -> split_id, assembly -> parts_received, assembly -> part_count);
+        split_reset(assembly);
+    }
+}

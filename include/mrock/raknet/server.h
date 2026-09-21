@@ -5,6 +5,10 @@
 #include "mrock/net/addr.h"
 
 #define RAKNET_MOTD_MAX 256
+#define RAKNET_SESSION_BUCKETS 512
+#define RAKNET_MAX_SESSIONS 100
+
+struct raknet_session;
 
 typedef struct raknet_server
 {
@@ -16,12 +20,20 @@ typedef struct raknet_server
 
     char motd[RAKNET_MOTD_MAX];
 
+    struct raknet_session *sessions[RAKNET_SESSION_BUCKETS];
+    size_t session_count;
+
     uint64_t rx_datagrams;
     uint64_t tx_datagrams;
     uint64_t bad_packets;
 
     bool running;
 } raknet_server_t;
+
+struct raknet_session *raknet_server_find_session(raknet_server_t *server, const mr_addr_t *addr);
+
+int raknet_server_add_session(raknet_server_t *server, struct raknet_session *session);
+void raknet_server_remove_session(raknet_server_t *server, struct raknet_session *session);
 
 int raknet_server_init(raknet_server_t *server, uint16_t port);
 void raknet_server_close(raknet_server_t *server);

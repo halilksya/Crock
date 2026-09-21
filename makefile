@@ -16,7 +16,10 @@ SRC := src/util/log.c \
        src/raknet/server.c \
        src/raknet/offline.c \
        src/raknet/frame.c \
-       src/raknet/ack.c
+       src/raknet/ack.c \
+       src/raknet/session.c \
+       src/raknet/recv.c \
+       src/raknet/send.c
 
 MAIN_SRC         := $(SRC) src/main.c
 TEST_COMMON_SRC  := $(SRC) tests/test_common.c

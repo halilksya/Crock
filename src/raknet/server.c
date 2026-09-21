@@ -1,5 +1,6 @@
 #include "mrock/raknet/server.h"
 #include "mrock/raknet/offline.h"
+#include "mrock/raknet/session.h"
 #include "mrock/mc.h"
 
 #include <errno.h>
@@ -17,10 +18,10 @@ static uint64_t random_guid(void)
 {
     uint64_t guid = 0;
     FILE *f = fopen("/dev/urandom", "rb");
-    
+
     if(f)
     {
-        if(fread(&guid, sizeof(guid), 1, f) != sizeof(guid))
+        if(fread(&guid, 1, sizeof(guid), f) != sizeof(guid))
             guid = 0;
         fclose(f);
     }
@@ -60,8 +61,8 @@ int raknet_server_init(struct raknet_server *server, uint16_t port)
             log_error("Failed to create socket: %s", strerror(errno));
             return -1;
         }
+        log_warn("IPv6 unavailable, using IPv4 only");
     }
-    log_warn("IPv6 unavailable, using IPv4 only");
 
     int on = 1;
     setsockopt(server -> fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
@@ -88,7 +89,7 @@ int raknet_server_init(struct raknet_server *server, uint16_t port)
     {
         struct sockaddr_in *s4 = (struct sockaddr_in *)&sa;
         s4 -> sin_family = AF_INET;
-        s4 -> sin_addr.s_addr = INADDR_ANY;
+        s4 -> sin_addr.s_addr = htonl(INADDR_ANY);
         s4 -> sin_port = htons(port);
         sa_len = sizeof(*s4);
     }
@@ -108,9 +109,22 @@ int raknet_server_init(struct raknet_server *server, uint16_t port)
 
 void raknet_server_close(raknet_server_t *server)
 {
+    for(size_t bucket = 0; bucket < RAKNET_SESSION_BUCKETS; bucket++)
+    {
+        raknet_session_t *session = server -> sessions[bucket];
+        while(session)
+        {
+            raknet_session_t *next = session -> hash_next;
+            raknet_session_destroy(session);
+            session = next;
+        }
+        server -> sessions[bucket] = NULL;
+    }
+    server -> session_count = 0;
+
     if(server -> fd >= 0)
         close(server -> fd);
-    
+
     server -> fd = -1;
 }
 
@@ -143,9 +157,9 @@ int raknet_server_send(raknet_server_t *server, const mr_addr_t *to, const void 
 
     if(sent < 0)
     {
-        if(errno == EAGAIN || errno == EWOULDBLOCK)
+        if(errno != EAGAIN && errno != EWOULDBLOCK)
             log_debug("sendto %s", strerror(errno));
-        
+
         return -1;
     }
 
@@ -155,17 +169,17 @@ int raknet_server_send(raknet_server_t *server, const mr_addr_t *to, const void 
 
 void raknet_server_build_motd(raknet_server_t *server, const char *name, const char *sub_name, int online, int max_players)
 {
-    snprintf(server -> motd, sizeof(server -> motd), 
+    snprintf(server -> motd, sizeof(server -> motd),
          "MCPE;%s;%d;%s;%d;%d;%llu;%s;Survival;1;%u;%u;",
          name,
          MCROCK_VERSION,
          MCROCK_VERSION_STRING,
          online,
          max_players,
-         (unsigned long long)server->guid,
+         (unsigned long long)server -> guid,
          sub_name,
-         server->port,
-         server->port);
+         server -> port,
+         server -> port);
 }
 
 void raknet_server_run(raknet_server_t *server)
@@ -182,15 +196,15 @@ void raknet_server_run(raknet_server_t *server)
             struct sockaddr_storage ss;
             socklen_t ss_len = sizeof(ss);
             ssize_t recv_len = recvfrom(server -> fd, recv_buf, sizeof(recv_buf), 0, (struct sockaddr *)&ss, &ss_len);
-            
+
             if(recv_len < 0)
             {
                 if(errno == EAGAIN || errno == EWOULDBLOCK)
                     break;
-                
+
                 if(errno == EINTR)
                     continue;
-                
+
                 log_debug("recvfrom %s", strerror(errno));
                 break;
             }
@@ -207,11 +221,38 @@ void raknet_server_run(raknet_server_t *server)
             if(raknet_offline_handle(server, recv_buf, (size_t)recv_len, &from))
                 continue;
 
-            server -> bad_packets++;
+            raknet_session_t *session = raknet_server_find_session(server, &from);
+            if(session)
+                raknet_session_on_datagram(session, recv_buf, (size_t)recv_len);
+            else
+                server -> bad_packets++;
+        }
+
+        uint64_t now = mr_now_ms();
+
+        for(size_t bucket = 0; bucket < RAKNET_SESSION_BUCKETS; bucket++)
+        {
+            for(raknet_session_t *session = server -> sessions[bucket]; session != NULL; session = session -> hash_next)
+                raknet_session_tick(session, now);
+        }
+
+        for(size_t bucket = 0; bucket < RAKNET_SESSION_BUCKETS; bucket++)
+        {
+            raknet_session_t *session = server -> sessions[bucket];
+            while(session)
+            {
+                raknet_session_t *next = session -> hash_next;
+                if(session -> state == RAKNET_STATE_DEAD)
+                {
+                    raknet_server_remove_session(server, session);
+                    raknet_session_destroy(session);
+                }
+                session = next;
+            }
         }
 
         next_tick += TICK_MS;
-        uint64_t now = mr_now_ms();
+        now = mr_now_ms();
         int wait_ms = (next_tick > now) ? (int)(next_tick - now) : 0;
 
         if(wait_ms == 0)
@@ -219,5 +260,48 @@ void raknet_server_run(raknet_server_t *server)
 
         struct pollfd pfd = { .fd = server -> fd, .events = POLLIN };
         poll(&pfd, 1, wait_ms);
+    }
+}
+
+struct raknet_session *raknet_server_find_session(raknet_server_t *server, const mr_addr_t *addr)
+{
+    size_t bucket = mr_addr_hash(addr) & (RAKNET_SESSION_BUCKETS - 1);
+
+    for(raknet_session_t *session = server -> sessions[bucket]; session != NULL; session = session -> hash_next)
+    {
+        if(mr_addr_equal(&session -> address, addr))
+            return session;
+    }
+    return NULL;
+}
+
+int raknet_server_add_session(raknet_server_t *server, struct raknet_session *session)
+{
+    if(server -> session_count >= RAKNET_MAX_SESSIONS)
+        return -1;
+
+    size_t bucket = mr_addr_hash(&session -> address) & (RAKNET_SESSION_BUCKETS - 1);
+    session -> hash_next = server -> sessions[bucket];
+    server -> sessions[bucket] = session;
+    server -> session_count++;
+
+    return 0;
+}
+
+void raknet_server_remove_session(raknet_server_t *server, struct raknet_session *session)
+{
+    size_t bucket = mr_addr_hash(&session -> address) & (RAKNET_SESSION_BUCKETS - 1);
+    raknet_session_t **prev = &server -> sessions[bucket];
+
+    while(*prev)
+    {
+        if(*prev == session)
+        {
+            *prev = session -> hash_next;
+            session -> hash_next = NULL;
+            server -> session_count--;
+            return;
+        }
+        prev = &(*prev) -> hash_next;
     }
 }
