@@ -4,6 +4,7 @@
 #include "mrock/raknet/proto.h"
 #include "mrock/raknet/frame.h"
 #include "mrock/net/addr.h"
+#include "mrock/game/connection.h"
 
 #define RAKNET_RECV_WINDOW 2048 
 #define RAKNET_SEND_CACHE_CAPACITY 2048
@@ -117,6 +118,7 @@ typedef struct raknet_session
     uint64_t resends;
 
     struct raknet_session *hash_next;
+    mc_connection_t game;
 } raknet_session_t;
 
 raknet_session_t *raknet_session_create(struct raknet_server *server, const mr_addr_t *address, uint64_t guid, uint16_t mtu);

@@ -4,6 +4,7 @@ CFLAGS  += -Iinclude -Wall -Wextra -Wshadow -Wconversion -Wsign-conversion \
            -Wpointer-arith -Wstrict-prototypes -D_GNU_SOURCE
 CFLAGS  += -MMD -MP
 LDFLAGS ?=
+LDLIBS  := -lz
 
 ifdef SAN
 CFLAGS  += -fsanitize=address,undefined -fno-omit-frame-pointer
@@ -19,7 +20,11 @@ SRC := src/util/log.c \
        src/raknet/ack.c \
        src/raknet/session.c \
        src/raknet/recv.c \
-       src/raknet/send.c
+       src/raknet/send.c \
+       src/game/compress.c \
+       src/game/batch.c \
+	   src/game/connection.c \
+	   src/game/handler.c 
 
 MAIN_SRC         := $(SRC) src/main.c
 TEST_COMMON_SRC  := $(SRC) tests/test_common.c
@@ -38,19 +43,19 @@ TEST_ACK_OBJ     := $(TEST_ACK_SRC:.c=.o)
 all: mrock
 
 mrock: $(MAIN_OBJ)
-	$(CC) $(LDFLAGS) -o $@ $^
+	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
 test-common: $(TEST_COMMON_OBJ)
-	$(CC) $(LDFLAGS) -o $@ $^
+	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
 test-bstream: $(TEST_BSTREAM_OBJ)
-	$(CC) $(LDFLAGS) -o $@ $^
+	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
 test-frame: $(TEST_FRAME_OBJ)
-	$(CC) $(LDFLAGS) -o $@ $^
+	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
 test-ack: $(TEST_ACK_OBJ)
-	$(CC) $(LDFLAGS) -o $@ $^
+	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
 test: test-common test-bstream test-frame test-ack
 	./test-common
@@ -69,6 +74,6 @@ DEPS := $(MAIN_OBJ:.o=.d) $(TEST_COMMON_OBJ:.o=.d) \
 -include $(wildcard $(DEPS))
 
 clean:
-	rm -f mrock test-common test-bstream test-frame test-ack \
-	      $(MAIN_OBJ) $(TEST_COMMON_OBJ) $(TEST_BSTREAM_OBJ) \
-	      $(TEST_FRAME_OBJ) $(TEST_ACK_OBJ) $(DEPS)
+	rm -f mrock test-common test-bstream test-frame test-ack
+	find . -name '*.o' -delete
+	find . -name '*.d' -delete

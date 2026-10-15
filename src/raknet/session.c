@@ -2,6 +2,7 @@
 #include "mrock/raknet/server.h"
 #include "mrock/raknet/ack.h"
 #include "mrock/util/bstream.h"
+#include "mrock/game/connection.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -16,6 +17,19 @@ void raknet_send_update(raknet_session_t *session, uint64_t now);
 static void send_connected_ping(raknet_session_t *session, uint64_t now);
 static void send_connected_pong(raknet_session_t *session, uint64_t ping_time);
 static void send_connection_request_accepted(raknet_session_t *session, uint64_t request_time);
+
+static int game_send(void *transport, const uint8_t *data, size_t len)
+{
+    raknet_session_t *session = (raknet_session_t *)transport;
+    return raknet_send_message(session, data, len, RAKNET_RELIABLE_ORDERED, 0);
+}
+
+static void game_close(void *transport, const char *reason)
+{
+    raknet_session_t *session = (raknet_session_t *)transport;
+    log_debug("game connection closed: %s", reason);
+    raknet_session_close(session, RAKNET_DISCONNECT_PROTOCOL);
+}
 
 raknet_session_t *raknet_session_create(struct raknet_server *server, const mr_addr_t *address, uint64_t guid, uint16_t mtu)
 {
@@ -40,6 +54,7 @@ raknet_session_t *raknet_session_create(struct raknet_server *server, const mr_a
     session -> last_recv_ms = now;
     session -> last_ping_ms = now;
 
+    mc_connection_init(&session -> game, session, game_send, game_close);
     return session;
 }
 
@@ -357,7 +372,7 @@ void raknet_session_on_message(raknet_session_t *session, const uint8_t *payload
             break;
 
         case RAKNET_ID_GAME_PACKET:
-            log_debug("game packet received (%zu bytes), not handled yet", len);
+            mc_connection_on_batch(&session -> game, payload + 1, len - 1);
             break;
 
         default:
