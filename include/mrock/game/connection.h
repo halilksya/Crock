@@ -2,8 +2,9 @@
 #define MCROCK_GAME_CONNECTION_H
 
 #include "mrock/game/batch.h"
+#include "mrock/game/player.h"
 
-#define MC_COMPRESSION_THRESHOLD 256
+#define MC_COMPRESSION_THRESHOLD 1
 
 typedef enum
 {
@@ -28,6 +29,7 @@ typedef struct
 
     bool compression_enabled;
     uint32_t client_protocol;
+    mc_player_identity_t player;
 }   mc_connection_t;
 
 void mc_connection_init(mc_connection_t *connection, void *transport, mc_send_callback_t send, mc_close_callback_t close);
