@@ -15,7 +15,7 @@ typedef enum
 } log_level_t;
 
 void log_set_level(log_level_t level);
-void log_write(log_level_t level, const char *file, int line, const char *format, ...);
+void log_write(log_level_t level, const char *file, int line, const char *format, ...) __attribute__((format(printf, 4, 5)));
 void log_hexdump(log_level_t level, const char *tag, const void *data, size_t len);
 
 #define log_trace(...) log_write(LOG_TRACE, __FILE__, __LINE__, __VA_ARGS__)

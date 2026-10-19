@@ -51,10 +51,6 @@ size_t raknet_ack_encode(bs_t *stream, const uint32_t *sequences, size_t count, 
         used += need;
         record_count++;
         consumed = run_end + 1;
-
-        if(record_count > 0xFFFF)
-            break;
-
     }
 
     stream -> buf[count_offset] = (uint8_t)(record_count >> 8);

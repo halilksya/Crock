@@ -43,6 +43,7 @@ raknet_session_t *raknet_session_create(struct raknet_server *server, const mr_a
     session -> state = RAKNET_STATE_CONNECTING;
 
     session -> send.mtu = mtu;
+    session -> send.usable_mtu = (uint16_t)(mtu - RAKNET_UDP_HEADER_SIZE);
 
     session -> recv.window_start = 0;
     session -> recv.window_end = RAKNET_RECV_WINDOW;
@@ -201,9 +202,9 @@ static void flush_acknowledgements(raknet_session_t *session)
     while(written < recv -> ack_count)
     {
         bs_t stream;
-        bs_write_init(&stream, buffer, session -> send.mtu);
+        bs_write_init(&stream, buffer, sizeof(buffer));
 
-        size_t n = raknet_ack_encode(&stream, recv -> ack_queue + written, recv -> ack_count - written, true, session -> send.mtu);
+        size_t n = raknet_ack_encode(&stream, recv -> ack_queue + written, recv -> ack_count - written, true, session -> send.usable_mtu);
 
         if(n == 0)
             break;
@@ -217,9 +218,9 @@ static void flush_acknowledgements(raknet_session_t *session)
     while(written < recv -> nack_count)
     {
         bs_t stream;
-        bs_write_init(&stream, buffer, session -> send.mtu);
+        bs_write_init(&stream, buffer, sizeof(buffer));
 
-        size_t n = raknet_ack_encode(&stream, recv -> nack_queue + written, recv -> nack_count - written, false, session -> send.mtu);
+        size_t n = raknet_ack_encode(&stream, recv -> nack_queue + written, recv -> nack_count - written, false, session -> send.usable_mtu);
 
         if(n == 0)
             break;

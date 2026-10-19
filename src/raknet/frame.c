@@ -91,6 +91,12 @@ void raknet_frame_encode(bs_t *stream, const raknet_frame_t *frame)
     if(frame -> is_split)
         flags |= RAKNET_FLAG_SPLIT;
 
+    if(frame -> payload_len == 0 || frame -> payload_len > 8191)
+    {
+        stream -> err = 1;
+        return;
+    }
+    
     bs_wu8(stream, flags);
     bs_wu16be(stream, (uint16_t)(frame -> payload_len * 8));
 

@@ -64,6 +64,7 @@ typedef struct
 typedef struct
 {
     uint16_t mtu;
+    uint16_t usable_mtu;
 
     uint32_t next_datagram_sequence;
     uint32_t next_reliable_index;

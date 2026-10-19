@@ -25,7 +25,7 @@ typedef struct
     uint32_t split_index;
 
     uint8_t *payload;
-    uint16_t payload_len;
+    uint32_t payload_len;
     bool owns_payload;
 } raknet_frame_t;
 

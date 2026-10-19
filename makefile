@@ -48,26 +48,22 @@ CJSON_OBJ := third_party/cjson/cJSON.o
 
 all: mrock
 
-
-third_party/cJSON/cJSON.o: third_party/cjson/cJSON.c
-	$(CC) -std=c11 -02 -g -Ithird_party -w -MMD -MP -c -o $@ $<
-
 mrock: $(MAIN_OBJ) $(CJSON_OBJ)
 	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
-test-common: $(TEST_COMMON_OBJ)
+test-common: $(TEST_COMMON_OBJ) $(CJSON_OBJ)
 	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
-test-bstream: $(TEST_BSTREAM_OBJ)
+test-bstream: $(TEST_BSTREAM_OBJ) $(CJSON_OBJ)
 	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
-test-frame: $(TEST_FRAME_OBJ)
+test-frame: $(TEST_FRAME_OBJ) $(CJSON_OBJ)
 	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
-test-ack: $(TEST_ACK_OBJ)
+test-ack: $(TEST_ACK_OBJ) $(CJSON_OBJ)
 	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
-test-base64: $(TEST_BASE64_OBJ)
+test-base64: $(TEST_BASE64_OBJ) $(CJSON_OBJ)
 	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
 test: test-common test-bstream test-frame test-ack test-base64
@@ -89,6 +85,6 @@ DEPS := $(MAIN_OBJ:.o=.d) $(TEST_COMMON_OBJ:.o=.d) \
 -include $(wildcard $(DEPS))
 
 clean:
-	rm -f mrock test-common test-bstream test-frame test-ack test-base64
+	rm -f mrock test-common test-bstream test-frame test-ack test-base64 test-bin
 	find . -name '*.o' -delete
 	find . -name '*.d' -delete

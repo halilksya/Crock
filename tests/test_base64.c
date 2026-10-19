@@ -44,7 +44,7 @@ static void test_known_values(void)
     except_text("YWI", "ab");
     except_text("YQ", "a");
     except_text("SGVsbG8", "Hello");
-    except_text("SGVsbG8sIHdvcmxkIQ==", "Hello, world!");
+    except_text("SGVsbG8sIHdvcmxkIQ", "Hello, world!");
 }
 
 static void test_url_alphabet(void)

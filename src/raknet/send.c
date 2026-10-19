@@ -48,7 +48,7 @@ int raknet_send_message(raknet_session_t *session, const uint8_t *payload, size_
     uint64_t now = mr_now_ms();
 
     size_t header = raknet_frame_header_size(reliability, false);
-    size_t max_payload = send -> mtu - 4 - header;
+    size_t max_payload = send -> usable_mtu - 4 - header;
 
     if(len <= max_payload)
     {
@@ -81,7 +81,7 @@ static int split_message(raknet_session_t *session, const uint8_t *payload, size
     raknet_send_layer_t *send = &session -> send;
 
     size_t header = raknet_frame_header_size(reliability, true);
-    size_t max_payload = send -> mtu - 4 - header;
+    size_t max_payload = send -> usable_mtu - 4 - header;
 
     size_t part_count = (len + max_payload - 1) / max_payload;
 
@@ -188,7 +188,7 @@ static void flush_queue(raknet_session_t *session, uint64_t now)
 
     uint8_t buffer[RAKNET_MAX_MTU];
     bs_t stream;
-    bs_write_init(&stream, buffer, send -> mtu);
+    bs_write_init(&stream, buffer, send -> usable_mtu);
 
     uint32_t sequence = send -> next_datagram_sequence;
     send -> next_datagram_sequence = triad_inc(send -> next_datagram_sequence);

@@ -79,6 +79,6 @@ void log_hexdump(log_level_t level, const char *tag, const void *data, size_t le
 uint64_t mr_now_ms(void)
 {
     struct timespec ts;
-    clock_gettime(CLOCK_REALTIME, &ts);
+    clock_gettime(CLOCK_MONOTONIC, &ts);
     return (uint64_t)ts.tv_sec * 1000ull + (uint64_t)ts.tv_nsec / 1000000ull;
 }

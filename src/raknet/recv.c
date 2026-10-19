@@ -377,7 +377,7 @@ static void handle_split(raknet_session_t *session, raknet_frame_t *frame)
     raknet_frame_t whole = assembly -> parts[0];
     whole.is_split = false;
     whole.payload = merged;
-    whole.payload_len = (uint16_t)total;
+    whole.payload_len = (uint32_t)total;
     whole.owns_payload = false;
 
     split_reset(assembly);

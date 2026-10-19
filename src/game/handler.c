@@ -5,11 +5,20 @@
 
 #include <string.h>
 
+#define MC_RESOURCE_PACK_REFUSED 0
+#define MC_RESOURCE_PACK_SEND_PACKS 1
+#define MC_RESOURCE_PACK_HAVE_ALL 2
+#define MC_RESOURCE_PACK_COMPLETED 3
+
 static void handle_request_network_settings(mc_connection_t *connection, const uint8_t *body, size_t body_len);
 
 static void handle_login(mc_connection_t *connection, const uint8_t *body, size_t body_len);
 
 static void handle_resource_pack_response(mc_connection_t *connection, const uint8_t *body, size_t body_len);
+
+static void send_network_settings(mc_connection_t *connection);
+
+static void send_play_status(mc_connection_t *connection, int32_t status);
 
 static void send_resource_packs_info(mc_connection_t *connection);
 
@@ -31,14 +40,14 @@ void mc_handle_packet(mc_connection_t *connection, uint32_t packet_id, const uin
             handle_resource_pack_response(connection, body, body_len);
             break;
 
+        case MC_PACKET_CLIENT_CACHE_STATUS:
+            break;
+
         default:
             log_debug("unhandled game packet 0x%02x (%zu bytes) in state %d", packet_id, body_len, connection -> state);
             break;
     }
 }
-
-static void send_network_settings(mc_connection_t *connection);
-static void send_play_status(mc_connection_t *connection, int32_t status);
 
 static void handle_request_network_settings(mc_connection_t *connection, const uint8_t *body, size_t body_len)
 {
@@ -71,7 +80,7 @@ static void handle_request_network_settings(mc_connection_t *connection, const u
     }
 
     send_network_settings(connection);
-    connection ->   compression_enabled = true;
+    connection -> compression_enabled = true;
     connection -> state = MC_STATE_LOGIN;
 }
 
@@ -116,7 +125,7 @@ static void send_network_settings(mc_connection_t *connection)
         return;
     }
 
-    if(mc_connection_send_packet(connection, MC_PACKET_NETWORK_SETTINGS, body, stream.len) < 0)
+    if(mc_connection_send_packet(connection, MC_PACKET_NETWORK_SETTINGS, stream.buf, stream.len) < 0)
     {
         log_debug("NetworkSettings send failed");
     }
@@ -131,7 +140,7 @@ static void send_play_status(mc_connection_t *connection, int32_t status)
     bs_wu32be(&stream, (uint32_t)status);
 
     if(!stream.err)
-        mc_connection_send_packet(connection, MC_PACKET_PLAY_STATUS, body, stream.len);
+        mc_connection_send_packet(connection, MC_PACKET_PLAY_STATUS, stream.buf, stream.len);
 }
 
 static void send_resource_packs_info(mc_connection_t *connection)
@@ -143,14 +152,13 @@ static void send_resource_packs_info(mc_connection_t *connection)
     bs_wbool(&stream, false);
     bs_wbool(&stream, false);
     bs_wbool(&stream, false);
+    bs_wbool(&stream, false);
 
     uint8_t zero_uuid[16];
     memset(zero_uuid, 0, sizeof(zero_uuid));
     bs_wbytes(&stream, zero_uuid, sizeof(zero_uuid));
 
     bs_wstr_var(&stream, "");
-
-    bs_wbool(&stream, false);
 
     bs_wvaru32(&stream, 0);
 
@@ -161,10 +169,6 @@ static void send_resource_packs_info(mc_connection_t *connection)
     }
 
     mc_connection_send_packet(connection, MC_PACKET_RESOURCE_PACKS_INFO, stream.buf, stream.len);
-
-    int result = mc_connection_send_packet(connection, MC_PACKET_RESOURCE_PACKS_INFO,
-                                           stream.buf, stream.len);
-    log_debug("ResourcePacksInfo sent: %d bytes, result %d", stream.len, result);
 }
 
 static void send_resource_pack_stack(mc_connection_t *connection)
@@ -176,7 +180,7 @@ static void send_resource_pack_stack(mc_connection_t *connection)
     bs_wbool(&stream, false);
 
     bs_wvaru32(&stream, 0);
-    
+
     bs_wstr_var(&stream, MCROCK_VERSION_STRING);
 
     bs_wu32le(&stream, 0);
@@ -193,11 +197,6 @@ static void send_resource_pack_stack(mc_connection_t *connection)
     mc_connection_send_packet(connection, MC_PACKET_RESOURCE_PACK_STACK, stream.buf, stream.len);
 }
 
-#define MC_RESOURCE_PACK_REFUSED 1
-#define MC_RESOURCE_PACK_SEND_PACKS 2
-#define MC_RESOURCE_PACK_HAVE_ALL 3
-#define MC_RESOURCE_PACK_COMPLETED 4
-
 static void handle_resource_pack_response(mc_connection_t *connection, const uint8_t *body, size_t body_len)
 {
     if(connection -> state != MC_STATE_RESOURCE_PACKS)
@@ -209,7 +208,7 @@ static void handle_resource_pack_response(mc_connection_t *connection, const uin
     bs_t stream;
     bs_read_init(&stream, body, body_len);
 
-    uint8_t status = bs_ru8(&stream);
+    uint32_t status = bs_rvaru32(&stream);
     if(stream.err)
         return;
 
@@ -229,6 +228,8 @@ static void handle_resource_pack_response(mc_connection_t *connection, const uin
             connection -> close(connection -> transport, "resource packs refused");
             break;
 
+        default:
+            log_debug("unexpected resource pack status %u", status);
+            break;
     }
-    
 }
