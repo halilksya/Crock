@@ -11,9 +11,12 @@
 #include <string.h>
 #include <unistd.h>
 
+// 100 ticks per second | Saniyede 100 tick
 #define TICK_MS 10
+//Comfortably above RAKNET_MAX_MTU | RAKNET_MAX_MTU'nun rahatça üstünde
 #define RECV_BUF_SIZE 2048
 
+//Does not need to be cryptographic, it only has to be unique between servers | Kriptografik olması gerekmiyor, sadece sunucular arası tekil olması yeterli
 static uint64_t random_guid(void)
 {
     uint64_t guid = 0;
@@ -21,6 +24,7 @@ static uint64_t random_guid(void)
 
     if(f)
     {
+        //Element size is 1, so the return value is a byte count | Eleman boyu 1, yani dönüş değeri bayt sayısı
         if(fread(&guid, 1, sizeof(guid), f) != sizeof(guid))
             guid = 0;
         fclose(f);
@@ -38,6 +42,8 @@ int raknet_server_init(struct raknet_server *server, uint16_t port)
     server -> port = port;
     server -> guid = random_guid();
     server -> start_ms = mr_now_ms();
+
+    //One socket serves both families; many containers have IPv6 off, hence the fallback | Tek soket iki aileye hizmet ediyor; çoğu konteynerde IPv6 kapalı, geri dönüş yolu o yüzden var
     server -> family = AF_INET6;
     server -> fd = socket(AF_INET6, SOCK_DGRAM, 0);
 
@@ -67,9 +73,11 @@ int raknet_server_init(struct raknet_server *server, uint16_t port)
     int on = 1;
     setsockopt(server -> fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
 
+    //Holds the datagrams that pile up between ticks instead of dropping them | Tick'ler arasında biriken datagramları düşürmek yerine tutuyor
     int rcvbuf = 1 << 20;
     setsockopt(server -> fd, SOL_SOCKET, SO_RCVBUF, &rcvbuf, sizeof(rcvbuf));
 
+    //Non-blocking, so the loop can drain the socket and then move on to the ticks | Bloklamayan mod, böylece döngü soketi boşaltıp tick'lere geçebiliyor
     int flags = fcntl(server -> fd, F_GETFL, 0);
     fcntl(server -> fd, F_SETFL, flags | O_NONBLOCK);
 
@@ -114,6 +122,7 @@ void raknet_server_close(raknet_server_t *server)
         raknet_session_t *session = server -> sessions[bucket];
         while(session)
         {
+            //The link has to be read before the node is freed | Bağlantı, düğüm serbest bırakılmadan önce okunmak zorunda
             raknet_session_t *next = session -> hash_next;
             raknet_session_destroy(session);
             session = next;
@@ -136,6 +145,7 @@ int raknet_server_send(raknet_server_t *server, const mr_addr_t *to, const void 
     if(mr_addr_to_sockaddr(to, &ss, &ss_len) < 0)
         return -1;
 
+    //A dual-stack socket needs the v4-mapped form; doing this on a plain IPv4 socket would fail with EAFNOSUPPORT | Dual-stack soket v4-mapped biçimini istiyor; düz IPv4 sokette bunu yapmak EAFNOSUPPORT veriyor
     if(server -> family == AF_INET6 && ss.ss_family == AF_INET)
     {
         const struct sockaddr_in *in = (const struct sockaddr_in *)&ss;
@@ -167,6 +177,7 @@ int raknet_server_send(raknet_server_t *server, const mr_addr_t *to, const void 
     return 0;
 }
 
+//Semicolon-separated fields in a fixed order; a missing one hides the server from the client's list | Sabit sırada noktalı virgülle ayrılmış alanlar; biri eksikse sunucu client'ın listesinde görünmüyor
 void raknet_server_build_motd(raknet_server_t *server, const char *name, const char *sub_name, int online, int max_players)
 {
     snprintf(server -> motd, sizeof(server -> motd),
@@ -191,6 +202,7 @@ void raknet_server_run(raknet_server_t *server)
 
     while(server -> running)
     {
+        //Drain everything the socket has before ticking | Tick'lemeye geçmeden soketteki her şeyi boşaltıyoruz
         for(;;)
         {
             struct sockaddr_storage ss;
@@ -199,6 +211,7 @@ void raknet_server_run(raknet_server_t *server)
 
             if(recv_len < 0)
             {
+                //Nothing left to read | Okunacak bir şey kalmadı
                 if(errno == EAGAIN || errno == EWOULDBLOCK)
                     break;
 
@@ -218,6 +231,7 @@ void raknet_server_run(raknet_server_t *server)
             if(mr_addr_from_sockaddr(&from, &ss) < 0)
                 continue;
 
+            //Offline messages are answered without a session | Offline mesaplar session olmadan cevaplanıyor
             if(raknet_offline_handle(server, recv_buf, (size_t)recv_len, &from))
                 continue;
 
@@ -230,6 +244,7 @@ void raknet_server_run(raknet_server_t *server)
 
         uint64_t now = mr_now_ms();
 
+        //Two passes on purpose: destroying a session while walking the chain would be a use-after-free | İki geçiş kasıtlı: zinciri gezerken session'ı yok etmek use-after-free olurdu
         for(size_t bucket = 0; bucket < RAKNET_SESSION_BUCKETS; bucket++)
         {
             for(raknet_session_t *session = server -> sessions[bucket]; session != NULL; session = session -> hash_next)
@@ -255,6 +270,7 @@ void raknet_server_run(raknet_server_t *server)
         now = mr_now_ms();
         int wait_ms = (next_tick > now) ? (int)(next_tick - now) : 0;
 
+        //Fell behind, so resync instead of chasing the backlog; chasing it spirals under load | Geride kaldık, birikmiş tick'leri kovalamak yerine saati sıfırlıyoruz; kovalamak yük altında spirale giriyor
         if(wait_ms == 0)
             next_tick = now;
 

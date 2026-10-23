@@ -27,6 +27,7 @@ void mc_connection_on_batch(mc_connection_t *connection, const uint8_t *data, si
     }
 }
 
+//One packet per batch for now; a real server would pack a tick's packets together | Şimdilik batch başına tek paket; gerçek bir sunucu bir tick'in paketlerini bir araya koyar
 int mc_connection_send_packet(mc_connection_t *connection, uint32_t packet_id, const uint8_t *body, size_t body_len)
 {
     mc_batch_t batch;
@@ -47,7 +48,6 @@ int mc_connection_send_packet(mc_connection_t *connection, uint32_t packet_id, c
     }
 
     int result = mc_batch_finish(&batch, connection -> compression_enabled, MC_COMPRESSION_THRESHOLD, &out);
-    
     mc_batch_free(&batch);
 
     if(result == 0)
@@ -55,5 +55,4 @@ int mc_connection_send_packet(mc_connection_t *connection, uint32_t packet_id, c
 
     bs_free(&out);
     return result;
-
 }

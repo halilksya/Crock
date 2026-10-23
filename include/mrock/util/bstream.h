@@ -6,11 +6,13 @@
 typedef struct
 {
     uint8_t *buf;
-    size_t   cap;
-    size_t  len;
-    size_t  pos;
-    int     err;
-    int    owned;
+    size_t cap;
+    size_t len;
+    size_t pos;
+    //Sticky: once set it stays set and every later read returns 0 | Yapışkan: bir kez set olunca kalıyor ve sonraki her okuma 0 dönüyor
+    int err;
+    //Only bs_dyn_init sets this; a fixed buffer sets err instead of growing | Sadece bs_dyn_init set ediyor; sabit buffer büyümek yerine err set ediyor
+    int owned;
 } bs_t;
 
 void bs_read_init(bs_t *s, const void *buf, size_t len);
@@ -29,12 +31,15 @@ static inline void bs_reset(bs_t *s)
     s->err = 0;
 }
 
+//Reads never report failure; check s -> err once after the whole parse | Okumalar hata dönmüyor; bütün parse bittikten sonra s -> err'i bir kez kontrol et
+//_be is the RakNet layer, _le the game layer; mixing them shifts the parse silently | _be RakNet katmanı, _le oyun katmanı; karıştırırsan parse sessizce kayıyor
 uint8_t  bs_ru8(bs_t *s);
 uint16_t bs_ru16be(bs_t *s);
 uint32_t bs_ru32be(bs_t *s);
 uint64_t bs_ru64be(bs_t *s);
 bool bs_rbool(bs_t *s);
 
+//24-bit triad used for RakNet sequence numbers, little-endian unlike the rest of that layer | RakNet sequence numaraları için 24-bit triad, o katmanın geri kalanının aksine little-endian
 uint32_t bs_ru24le(bs_t *s);
 
 uint16_t bs_ru16le(bs_t *s);
@@ -42,14 +47,17 @@ uint32_t bs_ru32le(bs_t *s);
 uint64_t bs_ru64le(bs_t *s);
 float bs_rf32le(bs_t *s);
 
+//varu is plain, vari is zigzag; the u and i are easy to miss | varu düz, vari zigzag; u ile i'yi gözden kaçırmak kolay
 uint32_t bs_rvaru32(bs_t *s);
 int32_t bs_rvari32(bs_t *s);
 uint64_t bs_rvaru64(bs_t *s);
 int64_t bs_rvari64(bs_t *s);
 
+//rbytes does not copy, it returns a pointer into buf; use rcopy to keep the data | rbytes kopyalamıyor, buf'ın içine pointer dönüyor; veriyi saklayacaksan rcopy kullan
 const uint8_t *bs_rbytes(bs_t *s, size_t n);
 void bs_rcopy(bs_t *s, void *dst, size_t n);
 
+//be reads a uint16 big-endian length, var a varuint32; both truncate to dst_cap | be uint16 big-endian uzunluk okuyor, var varuint32; ikisi de dst_cap'e göre kırpıyor
 size_t bs_rstr_be(bs_t *s, char *dst, size_t dst_cap);
 size_t bs_rstr_var(bs_t *s, char *dst, size_t dst_cap);
 
@@ -75,6 +83,7 @@ void bs_wbytes(bs_t *s, const void *src, size_t n);
 void bs_wstr_be(bs_t *s, const char *src);
 void bs_wstr_var(bs_t *s, const char *src);
 
+//Reserves space to backfill later; a later write on a dyn stream can realloc and invalidate it | Sonradan doldurmak için yer ayırıyor; dyn stream'de sonraki bir yazma realloc yapıp bu pointer'ı geçersizleştirebilir
 uint8_t *bs_wreserve(bs_t *s, size_t n);
 
 #endif

@@ -6,8 +6,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+//Enough for the chain JWT, but not for the client data one, which carries skin images | Chain JWT'si için yeterli, ama skin görüntüsü taşıyan client data JWT'si için değil
 #define MAX_JWT_PAYLOAD 8192
 
+//A JWT is header.payload.signature; we take the middle part and ignore the signature | JWT header.payload.signature şeklinde; ortadaki kısmı alıyoruz, imzaya bakmıyoruz
 static int decode_jwt_payload(const char *jwt, char *out, size_t out_cap)
 {
     const char *first_dot = strchr(jwt, '.');
@@ -53,6 +55,7 @@ static int extract_identity(const char *payload_json, mc_player_identity_t *iden
     if(!root)
         return -1;
 
+    //New PlayFab format keeps the identity at the root level | Yeni PlayFab formatı kimliği kök seviyede tutuyor
     const cJSON *xname = cJSON_GetObjectItemCaseSensitive(root, "xname");
     if(cJSON_IsString(xname))
     {
@@ -65,6 +68,7 @@ static int extract_identity(const char *payload_json, mc_player_identity_t *iden
         return ok ? 0 : -1;
     }
 
+    //Older clients nest it under extraData with different field names | Eski client'lar extraData altında, farklı alan adlarıyla gönderiyor
     const cJSON *extra = cJSON_GetObjectItemCaseSensitive(root, "extraData");
     if(!cJSON_IsObject(extra))
     {
@@ -90,6 +94,7 @@ static int parse_chain(const char *chain_json, size_t chain_len, mc_player_ident
 
     const char *jwt = NULL;
 
+    //New format is a single token object | Yeni format tek bir token nesnesi
     const cJSON *token = cJSON_GetObjectItemCaseSensitive(root, "Token");
     if(cJSON_IsString(token) && token -> valuestring)
     {
@@ -97,6 +102,7 @@ static int parse_chain(const char *chain_json, size_t chain_len, mc_player_ident
     }
     else
     {
+        //Old format is an array, and the identity sits in its last element | Eski format bir dizi, kimlik de son elemanında duruyor
         const cJSON *chain = cJSON_GetObjectItemCaseSensitive(root, "chain");
         if(!cJSON_IsArray(chain))
         {
@@ -141,8 +147,10 @@ int mc_login_parse(const uint8_t *body, size_t body_len, mc_player_identity_t *i
     bs_t stream;
     bs_read_init(&stream, body, body_len);
 
+    //The protocol version again; RequestNetworkSettings already checked it | Protokol sürümü tekrar geliyor; RequestNetworkSettings bunu zaten kontrol etti
     (void)bs_ru32be(&stream);
 
+    //Outer length is a varint, but the two lengths inside are fixed uint32 LE | Dıştaki uzunluk varint, ama içindeki iki uzunluk sabit uint32 LE
     uint32_t inner_len = bs_rvaru32(&stream);
     if(stream.err || inner_len == 0)
         return -1;
@@ -162,6 +170,7 @@ int mc_login_parse(const uint8_t *body, size_t body_len, mc_player_identity_t *i
     if(!chain_json)
         return -1;
 
+    //Client data holds the skin, device and language; skipped for now but needed later | Client data skin, cihaz ve dil bilgisini taşıyor; şimdilik atlanıyor ama sonra gerekecek
     uint32_t client_data_len = bs_ru32le(&inner_stream);
     if(inner_stream.err || client_data_len == 0)
         return -1;

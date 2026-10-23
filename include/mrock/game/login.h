@@ -4,6 +4,7 @@
 #include "mrock/game/player.h"
 #include "mrock/util/bstream.h"
 
+//WARNING: the JWT signature is not verified, any client can claim any name | UYARI: JWT imzası doğrulanmıyor, her client her ismi iddia edebilir
 int mc_login_parse(const uint8_t *body, size_t body_len, mc_player_identity_t *identity);
 
 #endif

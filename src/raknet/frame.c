@@ -5,17 +5,21 @@
 
 size_t raknet_frame_header_size(uint8_t reliability, bool is_split)
 {
+    //Flags byte plus the 16-bit length field | Flags baytı artı 16 bitlik uzunluk alanı
     size_t size = 1 + 2;
 
+    //Each index is a 3-byte triad | Her indeks 3 baytlık triad
     if(RAKNET_IS_RELIABLE(reliability))
         size += 3;
 
     if(RAKNET_IS_SEQUENCED(reliability))
         size += 3;
 
+    //Ordered carries a triad and a channel byte | Ordered bir triad ve bir kanal baytı taşıyor
     if(RAKNET_IS_ORDERED(reliability))
         size += 3 + 1;
 
+    //Split count, id and index | Split sayısı, id'si ve indeksi
     if(is_split)
         size += 4 + 2 + 4;
 
@@ -31,19 +35,22 @@ void raknet_frame_decode(bs_t *stream, raknet_frame_t *frame)
 {
     memset(frame, 0, sizeof(*frame));
 
+    //Reliability sits in the top three bits of the flags byte | Reliability flags baytının üst üç bitinde
     uint8_t flags = bs_ru8(stream);
     frame -> reliability = (uint8_t)(flags >> 5);
     frame -> is_split = (flags & RAKNET_FLAG_SPLIT) != 0;
 
+    //The length is in bits, not bytes, so round up when converting | Uzunluk bit cinsinden, bayt değil, o yüzden yukarı yuvarlıyoruz
     uint16_t bit_len = bs_ru16be(stream);
     size_t byte_len = ((size_t)bit_len + 7) / 8;
 
+    //A hostile peer could claim any length here | Kötü niyetli bir karşı taraf burada her uzunluğu iddia edebilir
     if(byte_len == 0 || byte_len > RAKNET_MAX_MTU)
     {
         stream -> err = 1;
         return;
     }
-    frame -> payload_len = (uint16_t)byte_len;
+    frame -> payload_len = (uint32_t)byte_len;
 
     if(RAKNET_IS_RELIABLE(frame -> reliability))
         frame -> reliable_index = bs_ru24le(stream);
@@ -55,13 +62,13 @@ void raknet_frame_decode(bs_t *stream, raknet_frame_t *frame)
     {
         frame -> ordered_index = bs_ru24le(stream);
         frame -> order_channel = bs_ru8(stream);
-        
-            if(frame -> order_channel >= RAKNET_MAX_ORDER_CHANNELS)
+
+        //The channel indexes arrays later on, so bound it here | Kanal ilerde dizileri indeksliyor, sınırı burada koyuyoruz
+        if(frame -> order_channel >= RAKNET_MAX_ORDER_CHANNELS)
         {
             stream -> err = 1;
             return;
         }
-
     }
 
     if(frame -> is_split)
@@ -70,6 +77,7 @@ void raknet_frame_decode(bs_t *stream, raknet_frame_t *frame)
         frame -> split_id = bs_ru16be(stream);
         frame -> split_index = bs_ru32be(stream);
 
+        //The index guard keeps reassembly from writing past the parts array | İndeks kontrolü, birleştirmenin parts dizisinin dışına yazmasını engelliyor
         if(frame -> split_count == 0 || frame -> split_count > RAKNET_MAX_SPLIT_PART_COUNT || frame -> split_index >= frame -> split_count)
         {
             stream -> err = 1;
@@ -77,12 +85,12 @@ void raknet_frame_decode(bs_t *stream, raknet_frame_t *frame)
         }
     }
 
+    //Points into the stream buffer, the const is dropped because own_payload may replace it | Stream buffer'ının içini gösteriyor, const düşüyor çünkü own_payload bunu değiştirebilir
     frame -> payload = (uint8_t *)bs_rbytes(stream, byte_len);
     frame -> owns_payload = false;
 
     if(!frame -> payload)
         stream -> err = 1;
-
 }
 
 void raknet_frame_encode(bs_t *stream, const raknet_frame_t *frame)
@@ -91,12 +99,13 @@ void raknet_frame_encode(bs_t *stream, const raknet_frame_t *frame)
     if(frame -> is_split)
         flags |= RAKNET_FLAG_SPLIT;
 
+    //The length field holds bits in 16 bits, so 8191 bytes is the ceiling | Uzunluk alanı 16 bitte bit tutuyor, yani tavan 8191 bayt
     if(frame -> payload_len == 0 || frame -> payload_len > 8191)
     {
         stream -> err = 1;
         return;
     }
-    
+
     bs_wu8(stream, flags);
     bs_wu16be(stream, (uint16_t)(frame -> payload_len * 8));
 

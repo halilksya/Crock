@@ -4,6 +4,7 @@
 #include "mrock/game/batch.h"
 #include "mrock/game/player.h"
 
+// 1 means every batch gets compressed | 1 olunca her batch sıkıştırılıyor
 #define MC_COMPRESSION_THRESHOLD 1
 
 typedef enum
@@ -21,16 +22,18 @@ typedef void(*mc_close_callback_t)(void *transport, const char *reason);
 
 typedef struct
 {
+    //Opaque to the game layer; RakNet passes its session here | Oyun katmanı için opak; RakNet kendi session'ını veriyor
     void *transport;
 
     mc_send_callback_t send;
     mc_close_callback_t close;
     mc_connection_state_t state;
 
+    //Set only after NetworkSettings is sent, not before | NetworkSettings gönderildikten SONRA set ediliyor, öncesinde değil
     bool compression_enabled;
     uint32_t client_protocol;
     mc_player_identity_t player;
-}   mc_connection_t;
+} mc_connection_t;
 
 void mc_connection_init(mc_connection_t *connection, void *transport, mc_send_callback_t send, mc_close_callback_t close);
 

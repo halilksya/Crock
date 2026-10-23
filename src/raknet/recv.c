@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+//The windows are tracked as bitmaps, one bit per sequence slot | Pencereler bitmap olarak tutuluyor, sequence başına bir bit
 static inline bool bit_get(const uint8_t *bits, size_t offset)
 {
     return (bits[offset / 8] & (uint8_t)(1u << (offset % 8))) != 0;
@@ -29,6 +30,7 @@ static void deliver_ordered(raknet_session_t *session, raknet_frame_t *frame);
 void raknet_send_on_ack(raknet_session_t *session, uint32_t sequence);
 void raknet_send_on_nack(raknet_session_t *session, uint32_t sequence);
 
+//Shifts the whole bitmap down while slot zero is filled, advancing the window | Sıfırıncı slot doluyken bitmap'in tamamını aşağı kaydırıp pencereyi ilerletiyor
 static void slide_window(raknet_recv_layer_t *recv)
 {
     while(bit_get(recv -> seen_bits, 0))
@@ -57,9 +59,11 @@ void raknet_recv_on_frame_set(raknet_session_t *session, bs_t *stream)
     if(stream -> err)
         return;
 
+    //Already slid past, so this is an old duplicate | Pencere bunu geçmiş, yani eski bir kopya
     if(triad_lt(sequence, recv -> window_start))
         return;
 
+    //Too far ahead to be real, treat the datagram as bad | Gerçek olamayacak kadar ileri, datagramı bozuk sayıyoruz
     if(triad_ge(sequence, recv -> window_end))
     {
         stream -> err = 1;
@@ -76,6 +80,7 @@ void raknet_recv_on_frame_set(raknet_session_t *session, bs_t *stream)
     if(recv -> ack_count < RAKNET_RECV_WINDOW)
         recv -> ack_queue[recv -> ack_count++] = sequence;
 
+    //A jump past the highest we have seen means everything in between was lost | En yükseğin ötesine atlamak, aradaki her şeyin kaybolduğu anlamına geliyor
     if(triad_gt(sequence, recv -> highest_seen))
     {
         uint32_t missing = recv -> highest_seen;
@@ -95,6 +100,7 @@ void raknet_recv_on_frame_set(raknet_session_t *session, bs_t *stream)
     slide_window(recv);
 }
 
+//One datagram can carry several frames back to back | Bir datagram arka arkaya birkaç frame taşıyabiliyor
 static void decode_frames(raknet_session_t *session, bs_t *stream)
 {
     size_t frame_count = 0;
@@ -111,6 +117,7 @@ static void decode_frames(raknet_session_t *session, bs_t *stream)
     }
 }
 
+//Separate window over reliable_index, since seeing a datagram once does not mean every frame in it is new | reliable_index üzerinde ayrı pencere, çünkü datagramı bir kez görmek içindeki her frame'in yeni olduğu anlamına gelmiyor
 static bool reliable_is_duplicate(raknet_recv_layer_t *recv, uint32_t index)
 {
     if(triad_lt(index, recv -> reliable_window_start))
@@ -122,6 +129,7 @@ static bool reliable_is_duplicate(raknet_recv_layer_t *recv, uint32_t index)
     {
         uint32_t slide = (uint32_t)((size_t)offset - RAKNET_RECV_WINDOW + 1);
 
+        //Jumped clean past the window, so nothing in the bitmap is worth keeping | Pencerenin tamamen ötesine atladı, bitmap'te saklanacak bir şey kalmıyor
         if(slide >= RAKNET_RECV_WINDOW)
         {
             memset(recv -> reliable_seen_bits, 0, sizeof(recv -> reliable_seen_bits));
@@ -153,6 +161,7 @@ static bool reliable_is_duplicate(raknet_recv_layer_t *recv, uint32_t index)
     return false;
 }
 
+//The duplicate check runs before the split branch, so reassembled messages skip it | Kopya kontrolü split dalından önce çalışıyor, böylece birleştirilmiş mesajlar bu kontrolü atlıyor
 static void handle_frame(raknet_session_t *session, raknet_frame_t *frame)
 {
     raknet_recv_layer_t *recv = &session -> recv;
@@ -176,6 +185,7 @@ static void dispatch_frame(raknet_session_t *session, raknet_frame_t *frame)
 {
     raknet_recv_layer_t *recv = &session -> recv;
 
+    //Sequenced only wants the newest, anything older is dropped outright | Sequenced sadece en yenisini istiyor, eskisi doğrudan atılıyor
     if(RAKNET_IS_SEQUENCED(frame -> reliability))
     {
         uint8_t channel = frame -> order_channel;
@@ -188,6 +198,7 @@ static void dispatch_frame(raknet_session_t *session, raknet_frame_t *frame)
         return;
     }
 
+    //Ordered has to wait its turn, so it goes through the buffer | Ordered sırasını beklemek zorunda, o yüzden tampondan geçiyor
     if(RAKNET_IS_ORDERED(frame -> reliability))
     {
         deliver_ordered(session, frame);
@@ -197,6 +208,7 @@ static void dispatch_frame(raknet_session_t *session, raknet_frame_t *frame)
     raknet_session_on_message(session, frame -> payload, frame -> payload_len);
 }
 
+//Allocated only for channels that actually see out-of-order traffic | Sadece gerçekten sırasız trafik gören kanallar için ayrılıyor
 static bool ensure_order_buffer(raknet_recv_layer_t *recv, uint8_t channel)
 {
     if(recv -> order_buffer[channel])
@@ -221,6 +233,7 @@ static void deliver_ordered(raknet_session_t *session, raknet_frame_t *frame)
     raknet_recv_layer_t *recv = &session -> recv;
     uint8_t channel = frame -> order_channel;
 
+    //The one we were waiting for, so deliver it and then drain whatever the buffer can follow with | Beklediğimiz frame geldi, onu verip tamponda devam eden ne varsa boşaltıyoruz
     if(frame -> ordered_index == recv -> next_ordered[channel])
     {
         raknet_session_on_message(session, frame -> payload, frame -> payload_len);
@@ -237,6 +250,7 @@ static void deliver_ordered(raknet_session_t *session, raknet_frame_t *frame)
             if(!recv -> order_slot_used[channel][slot])
                 break;
 
+            //Slots alias every CAPACITY indices, so confirm the index before using it | Slotlar her CAPACITY indekste çakışıyor, kullanmadan önce indeksi doğruluyoruz
             raknet_frame_t *buffered = &recv -> order_buffer[channel][slot];
             if(buffered -> ordered_index != wanted)
                 break;
@@ -267,6 +281,7 @@ static void deliver_ordered(raknet_session_t *session, raknet_frame_t *frame)
     if(recv -> order_slot_used[channel][slot])
         return;
 
+    //Buffered for later, so the payload has to outlive this datagram | Sonrası için saklanıyor, o yüzden payload bu datagramdan uzun yaşamak zorunda
     if(raknet_frame_own_payload(frame) < 0)
         return;
 
@@ -274,6 +289,7 @@ static void deliver_ordered(raknet_session_t *session, raknet_frame_t *frame)
     recv -> order_slot_used[channel][slot] = true;
 }
 
+//Matches an open assembly by id, otherwise claims a free slot | Açık bir birleştirmeyi id'ye göre buluyor, yoksa boş bir slot alıyor
 static raknet_split_assembly_t *find_split(raknet_session_t *session, uint16_t split_id, uint32_t part_count, uint64_t now)
 {
     for(size_t i = 0; i < RAKNET_MAX_CONCURRENT_SPLITS; i++)
@@ -282,6 +298,7 @@ static raknet_split_assembly_t *find_split(raknet_session_t *session, uint16_t s
 
         if(assembly -> in_use && assembly -> split_id == split_id)
         {
+            //Same id with a different part count means the peer is confused | Aynı id farklı parça sayısıyla geldiyse karşı taraf tutarsız
             if(assembly -> part_count != part_count)
                 return NULL;
             return assembly;
@@ -337,6 +354,7 @@ static void handle_split(raknet_session_t *session, raknet_frame_t *frame)
     if(!assembly)
         return;
 
+    //In range because frame decode rejected split_index >= split_count | Sınır içinde, çünkü frame decode split_index >= split_count durumunu reddetti
     if(assembly -> part_present[frame -> split_index])
         return;
 
@@ -374,6 +392,7 @@ static void handle_split(raknet_session_t *session, raknet_frame_t *frame)
         offset += assembly -> parts[i].payload_len;
     }
 
+    //Takes the first part's header but the merged payload; owns_payload stays false so the reset below does not free merged | İlk parçanın başlığını alıyor ama birleşmiş payload'ı; owns_payload false kalıyor ki aşağıdaki reset merged'i serbest bırakmasın
     raknet_frame_t whole = assembly -> parts[0];
     whole.is_split = false;
     whole.payload = merged;
@@ -403,6 +422,7 @@ void raknet_recv_on_nack(raknet_session_t *session, bs_t *stream)
         raknet_send_on_nack(session, sequence[i]);
 }
 
+//An abandoned split would hold its parts forever, so it is dropped after a while | Yarıda kalan bir split parçalarını sonsuza kadar tutardı, o yüzden bir süre sonra atılıyor
 void raknet_recv_expire_splits(raknet_session_t *session, uint64_t now)
 {
     for(size_t i = 0; i < RAKNET_MAX_CONCURRENT_SPLITS; i++)

@@ -5,6 +5,6 @@
 
 #define MC_BASE64_DECODED_SIZE(encoded_len) (((encoded_len) / 4 + 1) * 3)
 
-int mc_base64url_decode(const char *src, size_t src_len, uint8_t *out, size_t out_cap);
+int mc_base64url_decode(const char *src, size_t src_len, uint8_t *out, size_t out_cap); // Bytes written, -1 on error | Yazılan bayt sayısı, hata durumunda -1 döner
 
 #endif

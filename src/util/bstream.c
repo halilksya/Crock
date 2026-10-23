@@ -1,8 +1,9 @@
 #include "mrock/util/bstream.h"
 
 #include <stdlib.h>
-#include <string.h> 
+#include <string.h>
 
+//Read mode: the buffer is full of data and nothing may be written | Okuma modu: buffer baştan sona veri, yazma yapılmıyor
 void bs_read_init(bs_t *s, const void *buf, size_t len)
 {
     s->buf = (uint8_t *)buf;
@@ -13,6 +14,7 @@ void bs_read_init(bs_t *s, const void *buf, size_t len)
     s->owned = 0;
 }
 
+//Write mode over a fixed buffer; overflowing sets err instead of growing | Sabit buffer üzerinde yazma modu; taşma büyütmek yerine err set ediyor
 void bs_write_init(bs_t *s, void *buf, size_t cap)
 {
     s->buf = (uint8_t *)buf;
@@ -23,9 +25,10 @@ void bs_write_init(bs_t *s, void *buf, size_t cap)
     s->owned = 0;
 }
 
+//Owned buffer that doubles as needed; bs_free releases it | Gerektiğinde ikiye katlanan sahipli buffer; bs_free serbest bırakıyor
 int bs_dyn_init(bs_t *s, size_t initial_cap)
 {
-    if(initial_cap <64) 
+    if(initial_cap < 64)
         initial_cap = 64;
 
     s->buf = (uint8_t *)malloc(initial_cap);
@@ -47,21 +50,22 @@ void bs_free(bs_t *s)
 {
     if(s->owned && s->buf)
         free(s->buf);
-    
+
     memset(s, 0, sizeof(*s));
 }
 
+//Once err is set every later call bails out, so the caller checks it once at the end | err bir kez set olunca sonraki her çağrı çıkıyor, çağıran da sonda bir kez kontrol ediyor
 static inline int rd_ok(bs_t *s, size_t n)
 {
     if(s->err)
         return 0;
-    
+
     if(s->pos + n > s->len)
     {
         s->err = 1;
         return 0;
     }
-    
+
     return 1;
 }
 
@@ -73,6 +77,7 @@ static int wr_ok(bs_t *s, size_t n)
     if(s->pos + n <= s->cap)
         return 1;
 
+    //A fixed buffer cannot grow, so this is the end of the road | Sabit buffer büyüyemiyor, yolun sonu burası
     if(!s->owned)
     {
         s->err = 1;
@@ -93,7 +98,7 @@ static int wr_ok(bs_t *s, size_t n)
     }
 
     uint8_t *nb = (uint8_t *)realloc(s->buf, cap);
-    
+
     if(!nb)
     {
         s->err = 1;
@@ -105,6 +110,7 @@ static int wr_ok(bs_t *s, size_t n)
     return 1;
 }
 
+//len is a high-water mark, because pos can be rewound; compress.c relies on that | len en yüksek noktayı tutuyor, çünkü pos geri alınabiliyor; compress.c buna dayanıyor
 static inline void wr_bump(bs_t *s)
 {
     if(s->pos > s->len)
@@ -115,7 +121,7 @@ uint8_t bs_ru8(bs_t *s)
 {
     if(!rd_ok(s, 1))
         return 0;
-    
+
     return s->buf[s->pos++];
 }
 
@@ -176,7 +182,7 @@ uint16_t bs_ru16le(bs_t *s)
     if(!rd_ok(s,2))
         return 0;
 
-    uint16_t v = (uint16_t)(s->buf[s->pos] | (uint16_t)s->buf[s->pos + 1] << 8);  
+    uint16_t v = (uint16_t)(s->buf[s->pos] | (uint16_t)s->buf[s->pos + 1] << 8);
     s->pos += 2;
     return v;
 }
@@ -207,6 +213,7 @@ uint64_t bs_ru64le(bs_t *s)
     return v;
 }
 
+//Copied through memory rather than cast, so no aliasing rule is broken | Cast yerine bellek üzerinden kopyalanıyor, böylece aliasing kuralı kırılmıyor
 float bs_rf32le(bs_t *s)
 {
     uint32_t bits = bs_ru32le(s);
@@ -215,59 +222,61 @@ float bs_rf32le(bs_t *s)
     return f;
 }
 
+//Seven bits per byte, the top bit saying more follows; ten bytes is the ceiling for 64 bits | Bayt başına yedi bit, en üst bit devamı olduğunu söylüyor; 64 bit için tavan on bayt
 uint64_t bs_rvaru64(bs_t *s)
 {
     uint64_t v = 0;
     for(int shift = 0; shift < 70; shift += 7)
-    {   
+    {
         if(!rd_ok(s, 1))
             return 0;
-        
+
         uint8_t b = s->buf[s->pos++];
         v |= (uint64_t)(b & 0x7F) << shift;
-        
+
         if((b & 0x80) == 0)
             return v;
-            
     }
     s->err = 1;
     return 0;
 }
 
+//Five bytes is the ceiling for 32 bits | 32 bit için tavan beş bayt
 uint32_t bs_rvaru32(bs_t *s)
 {
     uint32_t v = 0;
 
     for(int shift = 0; shift < 35; shift += 7)
-    {      
+    {
         if(!rd_ok(s, 1))
             return 0;
-        
+
         uint8_t b = s->buf[s->pos++];
         v |= (uint32_t)(b & 0x7F) << shift;
-        
+
         if((b & 0x80) == 0)
             return v;
-            
     }
     s->err = 1;
     return 0;
 }
 
+//Zigzag undone: the low bit holds the sign, the rest is the magnitude | Zigzag geri alınıyor: alt bit işareti, kalanı büyüklüğü tutuyor
 int32_t bs_rvari32(bs_t *s)
 {
     uint32_t u = bs_rvaru32(s);
-    
+
     return (int32_t)(u >> 1) ^ -(int32_t)(u & 1);
 }
 
 int64_t bs_rvari64(bs_t *s)
 {
     uint64_t u = bs_rvaru64(s);
-    
+
     return (int64_t)(u >> 1) ^ -(int64_t)(u & 1);
 }
 
+//Returns a pointer into the buffer; it dies with the buffer, so copy what you keep | Buffer'ın içine pointer dönüyor; buffer ile birlikte ölüyor, saklayacağını kopyala
 const uint8_t *bs_rbytes(bs_t *s, size_t n)
 {
     if(!rd_ok(s, n))
@@ -285,16 +294,16 @@ void bs_rcopy(bs_t *s, void *dst, size_t n)
         memcpy(dst, p, n);
     else
         memset(dst, 0, n);
-
 }
 
+//Truncates to dst_cap and always terminates; the return value is what actually landed | dst_cap'e göre kırpıyor ve her zaman sonlandırıyor; dönüş değeri gerçekten yazılan kadarı
 static size_t read_str(bs_t *s, size_t n, char *dst, size_t dst_cap)
 {
     if(dst_cap == 0)
         return 0;
 
     const uint8_t *p = bs_rbytes(s, n);
-    
+
     if(!p)
     {
         dst[0] = '\0';
@@ -317,6 +326,7 @@ size_t bs_rstr_var(bs_t *s, char *dst, size_t dst_cap)
     return read_str(s, bs_rvaru32(s), dst, dst_cap);
 }
 
+//Hands back a writable window to fill in later; on a dyn stream a later write can move the buffer | Sonradan doldurulacak yazılabilir bir pencere veriyor; dyn stream'de sonraki bir yazma buffer'ı taşıyabiliyor
 uint8_t *bs_wreserve(bs_t *s, size_t n)
 {
     if(!wr_ok(s, n))
@@ -332,7 +342,7 @@ void bs_wu8(bs_t *s, uint8_t v)
 {
     if(!wr_ok(s, 1))
         return;
-    
+
     s->buf[s->pos++] = v;
     wr_bump(s);
 }
@@ -428,6 +438,7 @@ void bs_wf32le(bs_t *s, float f)
     bs_wu32le(s, bits);
 }
 
+//Writes at least one byte, so a zero still produces 0x00 | En az bir bayt yazıyor, yani sıfır bile 0x00 üretiyor
 void bs_wvaru64(bs_t *s, uint64_t v)
 {
     do
@@ -445,6 +456,7 @@ void bs_wvaru32(bs_t *s, uint32_t v)
     bs_wvaru64(s, v);
 }
 
+//Zigzag: the sign mask comes from an arithmetic right shift, so a negative gives all ones | Zigzag: işaret maskesi aritmetik sağa kaydırmadan geliyor, negatif değer bütün bitleri bire çeviriyor
 void bs_wvari32(bs_t *s, int32_t v)
 {
     bs_wvaru32(s, ((uint32_t)v << 1) ^ (uint32_t)(v >> 31));
@@ -459,7 +471,7 @@ void bs_wbytes(bs_t *s, const void *data, size_t n)
 {
     if(n == 0)
         return;
-    
+
     if(!wr_ok(s, n))
         return;
 
@@ -468,8 +480,12 @@ void bs_wbytes(bs_t *s, const void *data, size_t n)
     wr_bump(s);
 }
 
+//NULL is treated as an empty string so callers do not each need a guard | NULL boş string sayılıyor, böylece her çağıran ayrı kontrol yazmıyor
 void bs_wstr_be(bs_t *s, const char *str)
 {
+    if(!str)
+        str = "";
+
     size_t n = strlen(str);
     if(n > 0xFFFF)
     {
@@ -483,6 +499,9 @@ void bs_wstr_be(bs_t *s, const char *str)
 
 void bs_wstr_var(bs_t *s, const char *str)
 {
+    if(!str)
+        str = "";
+
     size_t n = strlen(str);
     bs_wvaru32(s, (uint32_t)n);
     bs_wbytes(s, str, n);

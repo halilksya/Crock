@@ -18,6 +18,7 @@ static void send_connected_ping(raknet_session_t *session, uint64_t now);
 static void send_connected_pong(raknet_session_t *session, uint64_t ping_time);
 static void send_connection_request_accepted(raknet_session_t *session, uint64_t request_time);
 
+//The two callbacks the game layer reaches RakNet through; game packets always go reliable-ordered on channel 0 | Oyun katmanının RakNet'e ulaştığı iki callback; oyun paketleri her zaman 0. kanalda reliable-ordered gidiyor
 static int game_send(void *transport, const uint8_t *data, size_t len)
 {
     raknet_session_t *session = (raknet_session_t *)transport;
@@ -45,6 +46,7 @@ raknet_session_t *raknet_session_create(struct raknet_server *server, const mr_a
     session -> send.mtu = mtu;
     session -> send.usable_mtu = (uint16_t)(mtu - RAKNET_UDP_HEADER_SIZE);
 
+    //The receive window opens on the range zero up to RAKNET_RECV_WINDOW | Alma penceresi sıfırdan RAKNET_RECV_WINDOW'a kadar açılıyor
     session -> recv.window_start = 0;
     session -> recv.window_end = RAKNET_RECV_WINDOW;
     session -> recv.highest_seen = 0;
@@ -119,6 +121,7 @@ static void free_send_cache(raknet_send_layer_t *send)
     }
 }
 
+//Both layers hold heap allocations, so each one has to be walked | İki katman da heap'te yer tutuyor, o yüzden her biri tek tek gezilmek zorunda
 void raknet_session_destroy(raknet_session_t *session)
 {
     if(!session)
@@ -149,6 +152,7 @@ void raknet_session_on_datagram(raknet_session_t *session, const uint8_t *data, 
     if(stream.err)
         return;
 
+    //An ack also carries the VALID bit, so it has to be tested first | Bir ack VALID bitini de taşıyor, o yüzden önce o kontrol edilmek zorunda
     if(flags & RAKNET_FLAG_ACK)
         raknet_recv_on_ack(session, &stream);
     else if(flags & RAKNET_FLAG_NAK)
@@ -176,6 +180,7 @@ static const char *disconnect_reason_text(raknet_disconnect_reason_t reason)
     }
 }
 
+//Only marks the session dead; the server's sweep frees it on the next tick | Session'ı sadece ölü olarak işaretliyor; sunucunun taraması sonraki tick'te serbest bırakıyor
 void raknet_session_close(raknet_session_t *session, raknet_disconnect_reason_t reason)
 {
     if(session -> state == RAKNET_STATE_DEAD)
@@ -193,6 +198,7 @@ void raknet_session_close(raknet_session_t *session, raknet_disconnect_reason_t 
     session -> state = RAKNET_STATE_DEAD;
 }
 
+//Loops because the records may not all fit in one datagram | Döngü var çünkü kayıtların tamamı tek bir datagrama sığmayabiliyor
 static void flush_acknowledgements(raknet_session_t *session)
 {
     raknet_recv_layer_t *recv = &session -> recv;
@@ -259,8 +265,9 @@ static void send_connection_request_accepted(raknet_session_t *session, uint64_t
 
     bs_wu8(&stream, RAKNET_ID_CONNECTION_REQUEST_ACCEPTED);
     mr_addr_write(&stream, &session -> address);
-    bs_wu16be(&stream, 0);
+    bs_wu16be(&stream, 0);      //system index
 
+    //RakNet's internal address list; Bedrock expects exactly 20 entries even when they are filler | RakNet'in dahili adres listesi; Bedrock dolgu olsalar bile tam 20 girdi bekliyor
     mr_addr_t dummy;
     memset(&dummy, 0, sizeof(dummy));
     dummy.version = 4;
@@ -282,6 +289,7 @@ static void send_connection_request_accepted(raknet_session_t *session, uint64_t
     raknet_send_message(session, stream.buf, stream.len, RAKNET_RELIABLE_ORDERED, 0);
 }
 
+//Pings go unreliable on purpose, a late one is worthless | Ping'ler bilerek unreliable gidiyor, geciken bir ping işe yaramıyor
 static void send_connected_ping(raknet_session_t *session, uint64_t now)
 {
     uint8_t payload[16];
@@ -302,6 +310,7 @@ static void send_connected_pong(raknet_session_t *session, uint64_t ping_time)
     bs_write_init(&stream, payload, sizeof(payload));
 
     bs_wu8(&stream, RAKNET_ID_CONNECTED_PONG);
+    //The ping time is echoed back untouched, then our own clock follows | Ping zamanı aynen geri yazılıyor, ardından kendi saatimiz geliyor
     bs_wu64be(&stream, ping_time);
     bs_wu64be(&stream, mr_now_ms());
 
@@ -326,6 +335,7 @@ static void handle_connection_request(raknet_session_t *session, bs_t *stream)
     send_connection_request_accepted(session, request_time);
 }
 
+//The client sends this after our accepted reply, and that is the real handshake finish | Client bunu bizim kabul cevabımızdan sonra gönderiyor, el sıkışma gerçekten burada bitiyor
 static void handle_new_incoming_connection(raknet_session_t *session)
 {
     if(session -> state != RAKNET_STATE_CONNECTING)
@@ -368,10 +378,12 @@ void raknet_session_on_message(raknet_session_t *session, const uint8_t *payload
         case RAKNET_ID_CONNECTED_PONG:
             break;
 
+        //The client's proper goodbye; without this case the session only dies by timeout | Client'ın düzgün vedası; bu case olmazsa session sadece timeout ile ölüyor
         case RAKNET_ID_DISCONNECTION_NOTIFICATION:
             raknet_session_close(session, RAKNET_DISCONNECT_CLIENT);
             break;
 
+        //Where the RakNet layer ends and the game layer begins; the id byte is stripped | RakNet katmanının bittiği, oyun katmanının başladığı yer; id baytı kırpılıyor
         case RAKNET_ID_GAME_PACKET:
             mc_connection_on_batch(&session -> game, payload + 1, len - 1);
             break;

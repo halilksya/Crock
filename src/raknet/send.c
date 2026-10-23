@@ -9,6 +9,7 @@ static int queue_frame(raknet_session_t *session, raknet_frame_t *frame, uint64_
 static void flush_queue(raknet_session_t *session, uint64_t now);
 static void cache_datagram(raknet_session_t *session, uint32_t sequence, uint64_t now);
 
+//Power-of-two mask, so distant sequences collide; the stored sequence is compared to catch that | İkinin kuvveti maskesi, uzak sequence'ler çakışıyor; saklanan sequence karşılaştırılarak yakalanıyor
 static inline size_t cache_slot(uint32_t sequence)
 {
     return sequence & (RAKNET_SEND_CACHE_CAPACITY - 1);
@@ -34,6 +35,7 @@ static void assign_indices(raknet_send_layer_t *send, raknet_frame_t *frame)
         uint8_t channel = frame -> order_channel;
         frame -> ordered_index = send -> next_ordered[channel];
 
+        //Sequenced modes share one ordered index and do not advance it | Sequenced modlar tek bir ordered indeksi paylaşıyor ve onu ilerletmiyor
         if(!RAKNET_IS_SEQUENCED(frame -> reliability))
             send -> next_ordered[channel] = triad_inc(send -> next_ordered[channel]);
     }
@@ -47,6 +49,7 @@ int raknet_send_message(raknet_session_t *session, const uint8_t *payload, size_
     raknet_send_layer_t *send = &session -> send;
     uint64_t now = mr_now_ms();
 
+    //The 4 is the datagram header, one flags byte and a 3-byte sequence | 4, datagram başlığı; bir flags baytı ve 3 baytlık sequence
     size_t header = raknet_frame_header_size(reliability, false);
     size_t max_payload = send -> usable_mtu - 4 - header;
 
@@ -58,11 +61,12 @@ int raknet_send_message(raknet_session_t *session, const uint8_t *payload, size_
         frame.reliability = reliability;
         frame.order_channel = order_channel;
         frame.payload = (uint8_t *)payload;
-        frame.payload_len = (uint16_t)len;
+        frame.payload_len = (uint32_t)len;
         frame.owns_payload = false;
 
         assign_indices(send, &frame);
 
+        //Copied here, which is why the caller may pass a stack buffer | Burada kopyalanıyor, çağıranın yığın buffer'ı verebilmesinin sebebi bu
         if(raknet_frame_own_payload(&frame) < 0)
             return -1;
 
@@ -80,6 +84,7 @@ static int split_message(raknet_session_t *session, const uint8_t *payload, size
 {
     raknet_send_layer_t *send = &session -> send;
 
+    //The split header is larger, so the usable chunk is smaller than above | Split başlığı daha büyük, o yüzden kullanılabilir parça yukarıdakinden küçük
     size_t header = raknet_frame_header_size(reliability, true);
     size_t max_payload = send -> usable_mtu - 4 - header;
 
@@ -93,6 +98,7 @@ static int split_message(raknet_session_t *session, const uint8_t *payload, size
 
     uint16_t split_id = send -> next_split_id++;
 
+    //Every part shares one ordered index, since they are one message to the receiver | Bütün parçalar tek bir ordered indeksi paylaşıyor, çünkü alıcı için tek bir mesaj
     uint32_t ordered_index = 0;
     uint32_t sequenced_index = 0;
 
@@ -125,6 +131,7 @@ static int split_message(raknet_session_t *session, const uint8_t *payload, size
         frame.ordered_index = ordered_index;
         frame.sequenced_index = sequenced_index;
 
+        //Each part still needs its own reliable index so losses can be pinpointed | Her parça yine kendi reliable indeksini alıyor, böylece kayıp tek tek belirlenebiliyor
         if(RAKNET_IS_RELIABLE(reliability))
         {
             frame.reliable_index = send -> next_reliable_index;
@@ -137,7 +144,7 @@ static int split_message(raknet_session_t *session, const uint8_t *payload, size
         frame.split_index = part;
 
         frame.payload = (uint8_t *)(payload + offset);
-        frame.payload_len = (uint16_t)chunk;
+        frame.payload_len = (uint32_t)chunk;
         frame.owns_payload = false;
 
         if(raknet_frame_own_payload(&frame) < 0)
@@ -154,12 +161,13 @@ static int split_message(raknet_session_t *session, const uint8_t *payload, size
     return 0;
 }
 
+//Frames pile up until the datagram is full, then the whole batch goes out at once | Frame'ler datagram dolana kadar birikiyor, sonra hepsi birlikte çıkıyor
 static int queue_frame(raknet_session_t *session, raknet_frame_t *frame, uint64_t now)
 {
     raknet_send_layer_t *send = &session -> send;
     size_t frame_size = raknet_frame_size(frame);
 
-    if(send -> send_queue_bytes + frame_size + 4 > send -> mtu)
+    if(send -> send_queue_bytes + frame_size + 4 > send -> usable_mtu)
         flush_queue(session, now);
 
     if(send -> send_queue_count >= RAKNET_SEND_QUEUE_CAPACITY)
@@ -213,6 +221,7 @@ static void flush_queue(raknet_session_t *session, uint64_t now)
     raknet_server_send(session -> server, &session -> address, stream.buf, stream.len);
     session -> tx_datagrams++;
 
+    //Only a datagram holding reliable frames is worth keeping for a resend | Sadece reliable frame taşıyan bir datagramı tekrar göndermek için saklamak anlamlı
     bool needs_cache = false;
 
     for(size_t i = 0; i < send -> send_queue_count; i++)
@@ -253,11 +262,13 @@ static void cache_free_entry(raknet_cached_datagram_t *entry)
     entry -> in_use = false;
 }
 
+//Takes over the queue's frames by shallow copy; the caller clears the queue afterwards | Kuyruktaki frame'leri yüzeysel kopyayla devralıyor; kuyruğu çağıran temizliyor
 static void cache_datagram(raknet_session_t *session, uint32_t sequence, uint64_t now)
 {
     raknet_send_layer_t *send = &session -> send;
     raknet_cached_datagram_t *entry = &send -> cache[cache_slot(sequence)];
 
+    //Means the peer never acked a datagram from CAPACITY sequences ago | Karşı taraf CAPACITY sequence önceki bir datagramı hiç ack'lememiş demek
     if(entry -> in_use)
     {
         log_debug("send cache overwrite at sequence %u (old sequence: %u)", sequence, entry -> sequence);
@@ -300,6 +311,7 @@ void raknet_send_on_nack(raknet_session_t *session, uint32_t sequence)
     if(!entry -> in_use || entry -> sequence != sequence)
         return;
 
+    //A nack and a timeout can name the same datagram in one tick | Bir nack ile zaman aşımı aynı tick'te aynı datagramı işaret edebiliyor
     for(size_t i = 0; i < send -> resend_count; i++)
     {
         if(send -> resend_queue[i] == sequence)
@@ -314,6 +326,7 @@ void raknet_send_update(raknet_session_t *session, uint64_t now)
 {
     raknet_send_layer_t *send = &session -> send;
 
+    //Anything unacked past the timeout is queued for a resend | Zaman aşımını geçip ack'lenmemiş olan ne varsa tekrar gönderime alınıyor
     for(size_t i = 0; i < RAKNET_SEND_CACHE_CAPACITY; i++)
     {
         raknet_cached_datagram_t *entry = &send -> cache[i];
@@ -335,6 +348,7 @@ void raknet_send_update(raknet_session_t *session, uint64_t now)
         if(!entry -> in_use || entry -> sequence != old_sequence)
             continue;
 
+        //The frames keep their own indices but get fresh payload copies and a new datagram sequence | Frame'ler kendi indekslerini koruyor ama yeni payload kopyası ve yeni datagram sequence'i alıyor
         for(size_t i = 0; i < entry -> frame_count; i++)
         {
             raknet_frame_t frame = entry -> frames[i];

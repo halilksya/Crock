@@ -3,8 +3,10 @@
 
 #include "mrock/util/bstream.h"
 
+//RakNet message ID that wraps a game packet batch | Oyun paketleri batch'ini saran Raknet mesaj ID'si
 #define MC_BATCH_HEADER 0xFE
 
+//Algorithm byte, present only when compression is enabled | Algoritma baytı sadece sıkıştırma açıkken pakette yer alıyor
 #define MC_COMPRESSION_ZLIB 0x00
 #define MC_COMPRESSION_SNAPPY 0x01
 #define MC_COMPRESSION_NONE 0xFF
@@ -13,11 +15,12 @@
 
 typedef void (*mc_packet_handler_t)(void *context, uint32_t packet_id, const uint8_t *body, size_t body_len);
 
+//body points into data, valid only during the handler call | body, data'nın içine işaret ediyor; sadece handler çağrısı boyunca geçerli
 int mc_batch_decode(const uint8_t *data, size_t data_len, bool compression_enabled, mc_packet_handler_t handler, void *context);
 
 typedef struct
 {
-    bs_t packets;
+    bs_t packets; //Length-prefixed packets, no 0xFE header yet | Uzunluk önekli paketler, 0xFE başlığı henüz yok
     size_t packet_count;
 } mc_batch_t;
 
@@ -26,6 +29,7 @@ void mc_batch_free(mc_batch_t *batch);
 
 int mc_batch_add(mc_batch_t *batch, uint32_t packet_id, const uint8_t *body, size_t body_len);
 
+//Below threshold the batch is sent uncompressed with the 0xFF marker | Batch eşikten küçükse 0xFF işaretiyle sıkıştırılmadan gidiyor
 int mc_batch_finish(mc_batch_t *batch, bool compression_enabled, size_t threshold, bs_t *out);
 
 #endif

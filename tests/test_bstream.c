@@ -34,6 +34,7 @@ static void test_endian(void)
 
     CHECK(!s.err, "write error");
 
+    //Checking the first and last byte of each field is enough to pin the order down | Her alanın ilk ve son baytını kontrol etmek sırayı saptamaya yetiyor
     CHECK(buf[0] == 0x12 && buf[1] == 0x34, "wrong u16be byte order");
     CHECK(buf[2] == 0x34 && buf[3] == 0x12, "wrong u16le byte order");
     CHECK(buf[4] == 0xAA && buf[7] == 0xDD, "wrong u32be byte order");
@@ -55,6 +56,7 @@ static void test_varint(void)
 {
     printf("bstream: varint tests\n");
 
+    //The last value is the ten byte worst case | Son değer on baytlık en kötü durum
     uint64_t values[] = { 0, 1, 127, 128, 255, 300, 0xFFFFFFFFull, 0xFFFFFFFFFFFFFFFFull };
 
     for(size_t i = 0; i < sizeof(values)/sizeof(values[0]); i++)
@@ -70,7 +72,8 @@ static void test_varint(void)
 
         CHECK(got == values[i] && !r.err, "varu64 %llu -> %llu", (unsigned long long)values[i], (unsigned long long)got);
     }
-    
+
+    //The two extremes are where a zigzag mistake shows up | Zigzag hatası kendini bu iki uçta gösteriyor
     int32_t svalues[] = { 0, -1, 1, -2, 2, -64, 63, INT32_MIN, INT32_MAX };
 
     for(size_t i = 0; i < sizeof(svalues)/sizeof(svalues[0]); i++)
@@ -87,6 +90,7 @@ static void test_varint(void)
         CHECK(got == svalues[i] && !r.err, "vari32 %d -> %d", svalues[i], got);
     }
 
+    //This is the point of zigzag: a plain varint would spend five bytes on -1 | Zigzag'in bütün amacı bu: düz varint -1 için beş bayt harcardı
     uint8_t buff[16];
     bs_t s;
     bs_write_init(&s, buff, sizeof(buff));
@@ -112,10 +116,12 @@ static void test_overflow(void)
     bs_ru32be(&s);
     CHECK(s.err, "reading from an empty buffer should set err");
 
+    //The sticky contract: once err is set nothing moves and nothing real comes back | Yapışkan sözleşme: err set olduktan sonra hiçbir şey ilerlemiyor ve gerçek bir değer dönmüyor
     CHECK(bs_ru64be(&s) == 0, "read after err should return 0");
     CHECK(bs_rbytes(&s, 100) == NULL, "read after err should return NULL");
     CHECK(s.pos == 4, "pos should not advance after err, pos=%zu", s.pos);
 
+    //A fixed buffer must refuse rather than grow, and refuse without writing part of the value | Sabit buffer büyümek yerine reddetmek, hem de değerin bir kısmını yazmadan reddetmek zorunda
     uint8_t smallbuf[2];
     bs_t w;
     bs_write_init(&w, smallbuf, sizeof(smallbuf));
@@ -128,6 +134,7 @@ static void test_dynamic(void)
 {
     printf("bstream: growing buffer tests\n");
 
+    //Starting at 8 bytes and writing 4000 forces several reallocs | 8 baytla başlayıp 4000 bayt yazmak birkaç realloc'u zorluyor
     bs_t s;
     CHECK(bs_dyn_init(&s, 8) == 0, "dyn_init failed");
 
@@ -142,7 +149,7 @@ static void test_dynamic(void)
     bs_t r;
     bs_read_init(&r, s.buf, s.len);
     int ok = 1;
-    
+
     for(int i = 0; i < 1000; i++)
     {
         if(bs_ru32be(&r) != (uint32_t)i)
@@ -161,10 +168,11 @@ static void test_strings(void)
 {
     printf("bstream: string tests\n");
 
+    //The be form is what the MOTD uses, the var form what the game layer uses | be biçimi MOTD'un kullandığı, var biçimi oyun katmanının kullandığı
     uint8_t buf[256];
     bs_t s;
     bs_write_init(&s, buf, sizeof(buf));
-    bs_wstr_be(&s, "MCPE;mrock;2168;1.26.44;0;20;");
+    bs_wstr_be(&s, "MCPE;mrock;2193;1.26.51;0;20;");
     bs_wstr_var(&s, "merhaba");
 
     bs_t r;
@@ -173,10 +181,11 @@ static void test_strings(void)
     bs_rstr_be(&r, s1, sizeof(s1));
     bs_rstr_var(&r, s2, sizeof(s2));
 
-    CHECK(strcmp(s1, "MCPE;mrock;2168;1.26.44;0;20;") == 0, "str_be: '%s'", s1);
+    CHECK(strcmp(s1, "MCPE;mrock;2193;1.26.51;0;20;") == 0, "str_be: '%s'", s1);
     CHECK(strcmp(s2, "merhaba") == 0, "str_var: '%s'", s2);
     CHECK(!r.err, "string read error");
 
+    //A short destination has to truncate and still terminate | Kısa hedef kırpmak ve yine de sonlandırmak zorunda
     bs_read_init(&r, buf, s.len);
     char tiny[5];
     memset(tiny, 'X', sizeof(tiny));
@@ -210,11 +219,13 @@ static void test_bytes(void)
     bs_read_init(&r, buf, w.len);
     CHECK(bs_ru8(&r) == 0xAA, "prefix byte");
 
+    //The pointer identity is the actual contract; the whole frame layer depends on it | Pointer kimliği asıl sözleşme; bütün frame katmanı buna dayanıyor
     const uint8_t *p = bs_rbytes(&r, 16);
     CHECK(p != NULL, "bs_rbytes returned NULL");
     CHECK(p == buf + 1, "bs_rbytes should not copy; it should return a pointer into the source buffer");
     CHECK(p && memcmp(p, src, 16) == 0, "block contents were corrupted");
 
+    //Zeroing on failure means a caller that forgets to check err reads zeros, not stack garbage | Hata halinde sıfırlamak, err'i kontrol etmeyi unutan çağıranın çöp değil sıfır okuması demek
     bs_read_init(&r, buf, 4);
     uint8_t small[16];
     memset(small, 0xFF, sizeof(small));
@@ -223,6 +234,7 @@ static void test_bytes(void)
     CHECK(small[0] == 0 && small[15] == 0, "bs_rcopy should zero dst on error");
 }
 
+//Mirrors what ack.c does: reserve a slot, write the body, then fill the slot in | ack.c'nin yaptığının aynısı: yer ayır, gövdeyi yaz, sonra ayrılan yeri doldur
 static void test_reserve(void)
 {
     printf("bstream: wreserve tests\n");
@@ -231,7 +243,7 @@ static void test_reserve(void)
     bs_t s;
     bs_write_init(&s, buf, sizeof(buf));
 
-    size_t len_offset = s.len;
+    size_t len_offset = s.pos;
     uint8_t *slot = bs_wreserve(&s, 2);
     CHECK(slot != NULL, "wreserve returned NULL");
 

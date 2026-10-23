@@ -29,6 +29,7 @@ static int parse_packets(const uint8_t *data, size_t data_len, mc_packet_handler
         if(packet_stream.err)
             return -1;
 
+        //The ID sits in the low 10 bits; the subclient bits above it are discarded | ID alt 10 bitte; üstündeki subclient bitleri atılıyor
         uint32_t packet_id = header & 0x3FF;
 
         handler(context, packet_id, packet + packet_stream.pos, bs_remaining(&packet_stream));
@@ -37,8 +38,10 @@ static int parse_packets(const uint8_t *data, size_t data_len, mc_packet_handler
     return 0;
 }
 
+//Three cases: no compression at all, the 0xFF marker, or zlib | Üç durum var: hiç sıkıştırma yok, 0xFF işareti, ya da zlib
 int mc_batch_decode(const uint8_t *data, size_t data_len, bool compression_enabled, mc_packet_handler_t handler, void *context)
 {
+    //Before NetworkSettings there is no algorithm byte at all | NetworkSettings öncesinde algoritma baytı hiç yok
     if(!compression_enabled)
         return parse_packets(data, data_len, handler, context);
 
@@ -55,6 +58,7 @@ int mc_batch_decode(const uint8_t *data, size_t data_len, bool compression_enabl
     if(algorithm != MC_COMPRESSION_ZLIB)
         return -1;
 
+    //Just a starting guess, the stream grows on its own if it falls short | Sadece başlangıç tahmini, yetmezse stream kendi büyüyor
     bs_t inflated;
     if(bs_dyn_init(&inflated, body_len * 4) < 0)
         return -1;
@@ -67,7 +71,7 @@ int mc_batch_decode(const uint8_t *data, size_t data_len, bool compression_enabl
 
     int result = parse_packets(inflated.buf, inflated.len, handler, context);
     bs_free(&inflated);
-    return result;  
+    return result;
 }
 
 int mc_batch_init(mc_batch_t *batch)
@@ -84,9 +88,11 @@ void mc_batch_free(mc_batch_t *batch)
 
 int mc_batch_add(mc_batch_t *batch, uint32_t packet_id, const uint8_t *body, size_t body_len)
 {
+    //0x3FF is the widest ID the 10-bit field can hold | 0x3FF, 10 bitlik alana sığan en büyük ID
     if(packet_id > 0x3FF || batch -> packet_count >= MC_MAX_PACKETS_PER_BATCH)
         return -1;
 
+    // 5 bytes is the longest a varint32 can get | 5 bayt bir varint32'nin ulaşabileceği en uzun hal
     uint8_t header_buf[5];
     bs_t header_stream;
     bs_write_init(&header_stream, header_buf, sizeof(header_buf));
@@ -102,7 +108,7 @@ int mc_batch_add(mc_batch_t *batch, uint32_t packet_id, const uint8_t *body, siz
 
     if(batch -> packets.err)
         return -1;
-    
+
     batch -> packet_count++;
     return 0;
 }
@@ -112,6 +118,7 @@ int mc_batch_finish(mc_batch_t *batch, bool compression_enabled, size_t threshol
     if(batch -> packet_count == 0 || batch -> packets.err)
         return -1;
 
+    //0xFE first, then the algorithm byte but only when compression is on | Önce 0xFE, ardından algoritma baytı ama sadece sıkıştırma açıkken
     bs_wu8(out, MC_BATCH_HEADER);
 
     if(!compression_enabled)
@@ -133,4 +140,3 @@ int mc_batch_finish(mc_batch_t *batch, bool compression_enabled, size_t threshol
 
     return mc_compress_deflate(batch -> packets.buf, batch -> packets.len, out);
 }
-

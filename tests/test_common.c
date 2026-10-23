@@ -16,6 +16,7 @@ static int fails = 0;
     }                                                                   \
 } while (0)
 
+//Small values where the wrapping logic should behave exactly like plain comparison | Küçük değerler, sarmalı mantığın düz karşılaştırma gibi davranması gereken yer
 static void test_normal(void)
 {
     printf("triad: normal comparison tests\n");
@@ -51,6 +52,7 @@ static void test_wrap(void)
     CHECK(triad_gt(0xFFFFFF, 0xFFFFFE), "0xFFFFFF should come after 0xFFFFFE");
     CHECK(triad_gt(1, 0),               "1 should come after 0");
 
+    //Exactly half the range is the ambiguous point, and it is defined as not ahead | Aralığın tam yarısı belirsiz nokta, tanım olarak önde sayılmıyor
     CHECK(triad_gt(MR_TRIAD_HALF - 1, 0), "HALF-1 should be ahead");
     CHECK(!triad_gt(MR_TRIAD_HALF, 0),    "HALF should not be considered ahead");
 }
@@ -67,6 +69,7 @@ static void test_diff(void)
     CHECK(triad_diff(0xFFFFFF, 0) == -1, "diff(MAX,0)=%d, should be -1", triad_diff(0xFFFFFF, 0));
     CHECK(triad_diff(5, 0xFFFFFE) == 7, "diff(5,0xFFFFFE)=%d, should be 7", triad_diff(5, 0xFFFFFE));
 
+    //recv.c uses the sign and the magnitude interchangeably, so the two have to agree | recv.c işaret ile büyüklüğü birbirinin yerine kullanıyor, o yüzden ikisi uyuşmak zorunda
     CHECK((triad_diff(0, 0xFFFFFF) > 0) == triad_gt(0, 0xFFFFFF), "diff sign does not match triad_gt");
 }
 
@@ -80,6 +83,7 @@ static void test_inc(void)
     CHECK(triad_inc(0xFFFFFF) == 0, "inc(MAX)=%u, should be 0", triad_inc(0xFFFFFF));
 }
 
+//Starts 16 below the top so the wrap lands in the middle of the loop | Tepeden 16 aşağıdan başlıyor, böylece sarma döngünün ortasına düşüyor
 static void test_full_cycle(void)
 {
     printf("triad: full cycle around wraparound tests\n");
@@ -88,24 +92,24 @@ static void test_full_cycle(void)
     uint32_t previous = start;
     int ok = 1;
 
-    for (int step = 1; step <= 32; step++) 
+    for (int step = 1; step <= 32; step++)
     {
         uint32_t current = triad_inc(previous);
 
-        if (!triad_gt(current, previous)) 
+        if (!triad_gt(current, previous))
         {
             printf("  step %d: %06x did not come after %06x\n", step, current, previous);
             ok = 0;
         }
 
-        if (!triad_gt(current, start)) 
+        if (!triad_gt(current, start))
         {
             printf("  step %d: %06x did not come after start %06x\n", step, current, start);
             ok = 0;
         }
 
-        if (triad_diff(current, start) != step) {
-
+        if (triad_diff(current, start) != step)
+        {
             printf("  step %d: diff was %d, should be %d\n", step, triad_diff(current, start), step);
             ok = 0;
         }
@@ -123,9 +127,10 @@ static void test_clock(void)
     uint64_t t1 = mr_now_ms();
     CHECK(t1 > 0, "mr_now_ms returned zero");
 
+    //The volatile is what keeps this loop alive under -O2; without it the test passes for free | volatile bu döngüyü -O2 altında ayakta tutan şey; o olmasa test bedavaya geçiyor
     volatile uint64_t sink = 0;
-    
-    for(int i = 0; i < 5000000; i++) 
+
+    for(int i = 0; i < 5000000; i++)
     {
         sink += (uint64_t)i;
     }

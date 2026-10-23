@@ -27,12 +27,13 @@ static size_t roundtrip(const uint32_t *input, size_t count, uint32_t *output, s
     size_t consumed = raknet_ack_encode(&writer, input, count, is_ack, sizeof(buf));
     if(encoded_len)
         *encoded_len = writer.len;
-    
+
     if(consumed != count)
         return 0;
 
     bs_t reader;
     bs_read_init(&reader, buf, writer.len);
+    //Decode starts after the flags byte, so that byte is read and thrown away | Decode flags baytından sonra başlıyor, o bayt okunup atılıyor
     bs_ru8(&reader);
 
     return raknet_ack_decode(&reader, output, out_capacity);
@@ -65,6 +66,7 @@ static void test_range_compression(void)
 
     CHECK(n == 100, "decoded %zu sequences, expected 100", n);
     CHECK(memcmp(input, output, sizeof(input)) == 0, "sequences corrupted");
+    //All 100 collapse into one range record: 3 bytes of header plus 7 | 100'ün tamamı tek bir aralık kaydına iniyor: 3 bayt başlık artı 7
     CHECK(encoded_len == 10, "encoded to %zu bytes, expected 10", encoded_len);
 }
 
@@ -72,6 +74,7 @@ static void test_mixed_records(void)
 {
     printf("raknet: ack mixed records tests\n");
 
+    //Three records expected: the run 5 to 8, the single 12, then the run 20 to 21 | Üç kayıt bekleniyor: 5-8 dizisi, tek başına 12, sonra 20-21 dizisi
     uint32_t input[] = {5, 6, 7, 8, 12, 20, 21};
     uint32_t output[16];
 
@@ -83,6 +86,7 @@ static void test_mixed_records(void)
     CHECK(consumed == 7, "consumed %zu sequences, expected 7", consumed);
     CHECK(!writer.err, "encode error");
 
+    //The count sits right after the flags byte, read by hand here | Sayaç flags baytının hemen ardında, burada elle okunuyor
     uint16_t record_count = (uint16_t)((buf[1] << 8) | buf[2]);
     CHECK(record_count == 3, "record count %u, expected 3", record_count);
 
@@ -99,6 +103,7 @@ static void test_wraparound(void)
 {
     printf("raknet: ack wraparound tests\n");
 
+    //The run crosses 0xFFFFFF back to zero and still has to stay one record | Dizi 0xFFFFFF'ten sıfıra geçiyor ve yine tek kayıt kalmak zorunda
     uint32_t input[] = { 0xFFFFFE, 0xFFFFFF, 0x000000, 0x000001};
     uint32_t output[16];
 
@@ -108,7 +113,7 @@ static void test_wraparound(void)
 
     size_t consumed = raknet_ack_encode(&writer, input, 4, true, sizeof(buf));
     CHECK(consumed == 4, "consumed %zu sequences, expected 4", consumed);
-    
+
     uint16_t record_count = (uint16_t)((buf[1] << 8) | buf[2]);
     CHECK(record_count == 1, "record count %u, expected 1 (wraparound)", record_count);
 
@@ -125,43 +130,50 @@ static void test_mtu_limit(void)
 {
     printf("raknet: ack mtu limit tests\n");
 
+    //Stepping by two keeps them non-consecutive, so range compression cannot hide the MTU limit | İkişer artmak ardışık olmalarını engelliyor, böylece aralık sıkıştırması MTU sınırını gizleyemiyor
     uint32_t input[1000];
     for(uint32_t i = 0; i < 1000; i++)
         input[i] = i * 2;
-    
+
     uint8_t buf[2048];
     bs_t writer;
     bs_write_init(&writer, buf, sizeof(buf));
 
     size_t consumed = raknet_ack_encode(&writer, input, 1000, true, 1400);
-    
+
     CHECK(consumed > 0, "nothing consumed");
     CHECK(consumed < 1000, "consumed %zu, should have been truncated", consumed);
     CHECK(writer.len <= 1400, "encoded %zu bytes, exceeds MTU 1400", writer.len);
     CHECK(!writer.err, "encode error");
 
+    //The leftovers have to fit in a second datagram, which is how session.c uses it | Kalanlar ikinci bir datagrama sığmak zorunda, session.c de böyle kullanıyor
     bs_t writer2;
     bs_write_init(&writer2, buf, sizeof(buf));
     size_t consumed2 = raknet_ack_encode(&writer2, input + consumed, 1000 - consumed, true, 1400);
     CHECK(consumed2 > 0, "second call consumed nothing");
-}   
+}
 
 static void test_malformed(void)
 {
     printf("raknet: ack malformed tests\n");
 
+    //These buffers start at the record count, since decode is called without a flags byte | Bu buffer'lar kayıt sayacından başlıyor, çünkü decode flags baytı olmadan çağrılıyor
     uint32_t output[64];
+
+    //One range record running from 100 down to 10, so the span comes out negative | 100'den 10'a inen tek bir aralık kaydı, yani span negatif çıkıyor
     uint8_t buf[] = { 0x00, 0x01, 0x00, 0x64, 0x00, 0x00, 0x0A, 0x00, 0x00 };
     bs_t reader;
     bs_read_init(&reader, buf, sizeof(buf));
     raknet_ack_decode(&reader, output, 64);
     CHECK(reader.err, "start > end should be rejected");
 
+    //A range from 0 to 0xFFFFFF, which wraps and also reads as negative | 0'dan 0xFFFFFF'e aralık, başa döndüğü için bu da negatif okunuyor
     uint8_t buf2[] = { 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF };
     bs_read_init(&reader, buf2, sizeof(buf2));
     raknet_ack_decode(&reader, output, 64);
     CHECK(reader.err, "huge range should be rejected");
 
+    //Claims ten records but carries only one, so the data runs out mid-loop | On kayıt olduğunu söylüyor ama bir tane taşıyor, veri döngünün ortasında bitiyor
     uint8_t buf3[] = { 0x00, 0x0A, 0x01, 0x05, 0x00, 0x00 };
     bs_read_init(&reader, buf3, sizeof(buf3));
     size_t n = raknet_ack_decode(&reader, output, 64);
@@ -176,6 +188,7 @@ static void test_flags(void)
     uint32_t input[] = { 1, 2, 3};
     uint8_t buf[64];
 
+    //VALID is always on, so an ack datagram must be told apart by the ACK bit | VALID her zaman açık, o yüzden ack datagramı ACK bitiyle ayırt edilmek zorunda
     bs_t writer;
     bs_write_init(&writer, buf, sizeof(buf));
     raknet_ack_encode(&writer, input, 3, true, sizeof(buf));

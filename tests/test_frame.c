@@ -18,6 +18,7 @@ static int fails = 0;
     }                                                                   \
 } while (0)
 
+//All eight modes are encoded with every index set, then only the ones that belong on the wire are checked | Sekiz modun hepsi bütün indeksler dolu olarak kodlanıyor, sonra sadece wire'da olması gerekenler kontrol ediliyor
 static void test_roundtrip(void)
 {
     printf("raknet: frame roundtrip tests(all reliability modes)\n");
@@ -49,11 +50,12 @@ static void test_roundtrip(void)
         bs_read_init(&reader, buf, writer.len);
         raknet_frame_t decoded;
         raknet_frame_decode(&reader, &decoded);
-        
+
         CHECK(!reader.err, "reliability %u: decode error", reliability);
         CHECK(decoded.reliability == reliability, "reliability %u -> %u", reliability, decoded.reliability);
         CHECK(decoded.payload_len == sizeof(payload), "reliability %u: payload_len %u", reliability, decoded.payload_len);
         CHECK(decoded.payload && memcmp(decoded.payload, payload, sizeof(payload)) == 0, "reliability %u: payload corrupted", reliability);
+        //Nothing left over proves the header length matched exactly | Artık kalmaması başlık uzunluğunun tam tuttuğunu kanıtlıyor
         CHECK(bs_remaining(&reader) == 0, "reliability %u: %zu bytes left over", reliability, bs_remaining(&reader));
 
         if(RAKNET_IS_RELIABLE(reliability))
@@ -66,8 +68,7 @@ static void test_roundtrip(void)
         {
             CHECK(decoded.ordered_index == 0x000042, "reliability %u: ordered_index %06x", reliability, decoded.ordered_index);
             CHECK(decoded.order_channel == 7, "reliability %u: order_channel %u", reliability, decoded.order_channel);
-
-        } 
+        }
     }
 }
 
@@ -98,6 +99,7 @@ static void test_split(void)
     raknet_frame_encode(&writer, &original);
     CHECK(!writer.err, "split encode error");
 
+    //The split bit lives in the same byte as the reliability, so it is checked on the wire | Split biti reliability ile aynı baytta duruyor, o yüzden wire üzerinde kontrol ediliyor
     CHECK((buf[0] & RAKNET_FLAG_SPLIT) != 0, "split flag not set in encoded frame");
 
     bs_t reader;
@@ -113,6 +115,7 @@ static void test_split(void)
     CHECK(bs_remaining(&reader) == 0, "split: %zu bytes left over", bs_remaining(&reader));
 }
 
+//send.c sizes its MTU budget from these two functions, so they must match the real encoding | send.c MTU bütçesini bu iki fonksiyondan hesaplıyor, o yüzden gerçek kodlamayla tutmaları şart
 static void test_size(void)
 {
     printf("raknet: frame size calculation tests\n");
@@ -152,6 +155,7 @@ static void test_malformed(void)
 {
     printf("raknet: malformed frame tests\n");
 
+    //Reliable-ordered and split, 64 bits of payload, but a split count of zero | Reliable-ordered ve split, 64 bit payload, ama split sayısı sıfır
     uint8_t buf[] =
     {
         0x70,
@@ -169,6 +173,7 @@ static void test_malformed(void)
     raknet_frame_decode(&reader, &frame);
     CHECK(reader.err, "split_count=0 should be rejected");
 
+    //Same frame without the split bit, but the order channel is 200 and only 32 exist | Split biti olmayan aynı frame, ama order channel 200 ve sadece 32 tane var
     uint8_t buf2[] =
     {
         0x60,
@@ -183,12 +188,14 @@ static void test_malformed(void)
     raknet_frame_decode(&reader, &frame2);
     CHECK(reader.err, "order_channel=200 should be rejected");
 
+    //The length field reads zero bits, which cannot be a real frame | Uzunluk alanı sıfır bit okuyor, bu gerçek bir frame olamaz
     uint8_t buf3[] ={ 0x60, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
     bs_read_init(&reader, buf3, sizeof(buf3));
     raknet_frame_t frame3;
     raknet_frame_decode(&reader, &frame3);
-    CHECK(reader.err, "zero-lenght payload should be rejected");
+    CHECK(reader.err, "zero-length payload should be rejected");
 
+    //Claims 800 bits, which is 100 bytes, while only four follow | 800 bit yani 100 bayt olduğunu söylüyor, arkasından dört bayt geliyor
     uint8_t buf4[] = { 0x60, 0x03, 0x20, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 1, 2, 3, 4 };
     bs_read_init(&reader, buf4, sizeof(buf4));
     raknet_frame_t frame4;
@@ -212,9 +219,11 @@ static void test_ownership(void)
     CHECK(frame.owns_payload, "owns_payload not set");
     CHECK(frame.payload != source, "own_payload must copy, not alias");
 
+    //Wrecking the source is the only way to prove the copy is real | Kaynağı bozmak kopyanın gerçek olduğunu kanıtlamanın tek yolu
     memset(source, 0xFF, sizeof(source));
     CHECK(frame.payload[0] == 1 && frame.payload[7] == 8, "payload was not really copied");
 
+    //recv.c can call this twice on the same frame, so a second call must not leak | recv.c bunu aynı frame üzerinde iki kez çağırabiliyor, o yüzden ikinci çağrı sızdırmamalı
     uint8_t *before = frame.payload;
     CHECK(raknet_frame_own_payload(&frame) == 0, "second own_payload failed");
     CHECK(frame.payload == before, "own_payload must be idempotent");
@@ -223,6 +232,7 @@ static void test_ownership(void)
     CHECK(frame.payload == NULL, "free must null the pointer");
     CHECK(!frame.owns_payload, "free must clear owns_payload");
 
+    //Freeing twice, and freeing a borrowed payload, both have to be harmless | İki kez serbest bırakmak ve ödünç bir payload'ı serbest bırakmak, ikisi de zararsız olmak zorunda
     raknet_frame_free(&frame);
     raknet_frame_t borrowed;
     memset(&borrowed, 0, sizeof(borrowed));
