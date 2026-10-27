@@ -28,7 +28,8 @@ SRC := src/util/log.c \
 	   src/game/base64.c \
 	   src/game/login.c	\
 	   src/game/nbt.c \
-	   src/game/start_game.c
+	   src/game/start_game.c \
+	   src/game/chunk.c
 
 MAIN_SRC         := $(SRC) src/main.c
 TEST_COMMON_SRC  := $(SRC) tests/test_common.c

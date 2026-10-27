@@ -3,6 +3,7 @@
 #include "mrock/mc.h"
 #include "mrock/game/login.h"
 #include "mrock/game/start_game.h"
+#include "mrock/game/chunk.h"
 
 #include <string.h>
 
@@ -30,6 +31,8 @@ static void send_resource_pack_stack(mc_connection_t *connection);
 
 static void start_spawn_sequence(mc_connection_t *connection);
 
+static void handle_request_chunk_radius(mc_connection_t *connection, const uint8_t *body, size_t body_len);
+
 void mc_handle_packet(mc_connection_t *connection, uint32_t packet_id, const uint8_t *body, size_t body_len)
 {
     switch(packet_id)
@@ -46,7 +49,10 @@ void mc_handle_packet(mc_connection_t *connection, uint32_t packet_id, const uin
             handle_resource_pack_response(connection, body, body_len);
             break;
 
-        //Swallowed on purpose, we do not use the chunk cache | Bilerek yutuluyor, chunk cache kullanmıyoruz
+        case MC_PACKET_REQUEST_CHUNK_RADIUS:
+            handle_request_chunk_radius(connection, body, body_len);
+            break;
+
         case MC_PACKET_CLIENT_CACHE_STATUS:
             break;
 
@@ -222,6 +228,49 @@ static void start_spawn_sequence(mc_connection_t *connection)
     }
 
     log_info("StartGame sequence sent to %s", connection -> player.name);
+}
+
+static void handle_request_chunk_radius(mc_connection_t *connection, const uint8_t *body, size_t body_len)
+{
+    bs_t stream;
+    bs_read_init(&stream, body, body_len);
+
+    int32_t requested = bs_rvari32(&stream);
+
+    //The client's own ceiling, we have no use for it | Client'ın kendi üst sınırı, bize gerekmiyor
+    (void)bs_ru8(&stream);
+
+    if(stream.err)
+        return;
+
+    //A zero radius would send no chunks and leave the player hanging | Sıfır yarıçap hiç chunk göndermez ve oyuncuyu boşlukta bırakır
+    if(requested < 1)
+        requested = 1;
+
+    if(requested > MC_MAX_CHUNK_RADIUS)
+        requested = MC_MAX_CHUNK_RADIUS;
+
+    connection -> chunk_radius = requested;
+
+    if(mc_send_chunk_radius_updated(connection, requested) < 0)
+    {
+        log_debug("ChunkRadiusUpdated send failed");
+        return;
+    }
+
+    log_info("chunk radius %d granted to %s", requested, connection -> player.name);
+
+    if(mc_send_spawn_chunks(connection) < 0)
+    {
+        log_debug("spawn chunks send failed");
+        return;
+    }
+
+    //The client leaves the loading screen only after this | Client yükleme ekranından ancak bundan sonra çıkıyor
+    send_play_status(connection, MC_PLAY_STATUS_PLAYER_SPAWN);
+    connection -> state = MC_STATE_PLAYING;
+
+    log_info("player spawned: %s", connection -> player.name);
 }
 
 static void handle_resource_pack_response(mc_connection_t *connection, const uint8_t *body, size_t body_len)

@@ -32,6 +32,10 @@ typedef struct
     //Set only after NetworkSettings is sent, not before | NetworkSettings gönderildikten SONRA set ediliyor, öncesinde değil
     bool compression_enabled;
     uint32_t client_protocol;
+    
+    //Radius granted to this client, the chunk sender reads it | Bu client'a verilen yarıçap, chunk gönderici bunu okuyor
+    int32_t chunk_radius;
+
     mc_player_identity_t player;
 } mc_connection_t;
 
