@@ -25,13 +25,12 @@ static void write_empty_biomes(bs_t *stream)
     //bitsPerIndex 0 with the network flag, meaning one value for the whole section | Ağ bayrağıyla bitsPerIndex 0, yani bölümün tamamı tek değer
     bs_wu8(stream, 0x01);
 
-    //The palette holds one biome id, and network palettes are zigzag varints | Palette tek bir biyom  id'si tutuyor, ağ palette'leri zigzag varint
+    //The palette holds one biome id, and network palettes are zigzag varints | Palette tek bir biyom id'si tutuyor, ağ palette'leri zigzag varint
     bs_wvari32(stream, 1);
 
-    //0xFF means this sevtion repeats the previous one | 0xFF bu bölümün öncekini tekrarladığı anlamına geliyor
+    //0xFF means this section repeats the previous one | 0xFF bu bölümün öncekini tekrarladığı anlamına geliyor
     for(int i = 1; i < MC_CHUNK_SECTION_COUNT; i++)
         bs_wu8(stream, 0xFF);
-
 }
 
 int mc_send_level_chunk(mc_connection_t *connection, int32_t chunk_x, int32_t chunk_z)
@@ -64,10 +63,13 @@ int mc_send_level_chunk(mc_connection_t *connection, int32_t chunk_x, int32_t ch
 
     bs_wbool(&stream, false); //sub chunk limit absent
     bs_wbool(&stream, false); //cache disabled
-    bs_wvaru32(&stream, 0);   //blob has count
-    
+    bs_wvaru32(&stream, 0);   //blob hash count
+
     bs_wvaru32(&stream, (uint32_t)payload.len);
     bs_wbytes(&stream, payload.buf, payload.len);
+
+    //Whether our biome data replaces what the client already holds for this column | Bu kolon için client'ın elindeki biyom verisinin yerine bizimkinin geçip geçmeyeceği
+    bs_wbool(&stream, false);
 
     if(stream.err)
     {
@@ -113,7 +115,7 @@ int mc_send_spawn_chunks(mc_connection_t *connection)
 
     for(int32_t x = -radius; x <= radius; x++)
     {
-        for(int32_t z = -radius; x <= radius; z++)
+        for(int32_t z = -radius; z <= radius; z++)
         {
             if(mc_send_level_chunk(connection, x, z) < 0)
                 return -1;

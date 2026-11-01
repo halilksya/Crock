@@ -168,7 +168,13 @@ static int queue_frame(raknet_session_t *session, raknet_frame_t *frame, uint64_
     size_t frame_size = raknet_frame_size(frame);
 
     if(send -> send_queue_bytes + frame_size + 4 > send -> usable_mtu)
+    {
         flush_queue(session, now);
+
+        //The flush can be held back by a full send window, and then the frame has nowhere to go | Flush dolu gönderim penceresi yüzünden bekletilmiş olabilir, o zaman frame'in gidecek yeri yok
+        if(send -> send_queue_bytes + frame_size + 4 > send -> usable_mtu)
+            return -1;
+    }
 
     if(send -> send_queue_count >= RAKNET_SEND_QUEUE_CAPACITY)
     {
@@ -194,11 +200,19 @@ static void flush_queue(raknet_session_t *session, uint64_t now)
     if(send -> send_queue_count == 0)
         return;
 
+    uint32_t sequence = send -> next_datagram_sequence;
+
+    //The cache is the send window: sending now would drop unacked reliable data, so hold the frames | Cache gönderim penceresinin kendisi: şimdi göndermek ack'lenmemiş reliable veriyi düşürür, o yüzden frame'leri bekletiyoruz
+    if(send -> cache[cache_slot(sequence)].in_use)
+    {
+        log_trace("send window full at sequence %u, holding %zu frames", sequence, send -> send_queue_count);
+        return;
+    }
+
     uint8_t buffer[RAKNET_MAX_MTU];
     bs_t stream;
     bs_write_init(&stream, buffer, send -> usable_mtu);
 
-    uint32_t sequence = send -> next_datagram_sequence;
     send -> next_datagram_sequence = triad_inc(send -> next_datagram_sequence);
 
     bs_wu8(&stream, RAKNET_FLAG_VALID);
@@ -268,10 +282,10 @@ static void cache_datagram(raknet_session_t *session, uint32_t sequence, uint64_
     raknet_send_layer_t *send = &session -> send;
     raknet_cached_datagram_t *entry = &send -> cache[cache_slot(sequence)];
 
-    //Means the peer never acked a datagram from CAPACITY sequences ago | Karşı taraf CAPACITY sequence önceki bir datagramı hiç ack'lememiş demek
+    //flush_queue guards the window, so a used slot here is a bug rather than back pressure | Pencereyi flush_queue koruyor, buradaki dolu slot akış baskısı değil hatadır
     if(entry -> in_use)
     {
-        log_debug("send cache overwrite at sequence %u (old sequence: %u)", sequence, entry -> sequence);
+        log_warn("send cache slot busy at sequence %u (old sequence: %u)", sequence, entry -> sequence);
         cache_free_entry(entry);
     }
 
@@ -340,7 +354,10 @@ void raknet_send_update(raknet_session_t *session, uint64_t now)
         raknet_send_on_nack(session, entry -> sequence);
     }
 
-    for(size_t q = 0; q < send -> resend_count; q++)
+    //A budget per tick; whatever is left stays in the cache and the next scan picks it up | Tick başına bütçe; artanlar cache'de kalıyor, bir sonraki tarama onları yakalıyor
+    size_t budget = RAKNET_MAX_RESENDS_PER_TICK;
+
+    for(size_t q = 0; q < send -> resend_count && budget > 0; q++)
     {
         uint32_t old_sequence = send -> resend_queue[q];
         raknet_cached_datagram_t *entry = &send -> cache[cache_slot(old_sequence)];
@@ -363,8 +380,13 @@ void raknet_send_update(raknet_session_t *session, uint64_t now)
                 break;
             }
         }
-        cache_free_entry(entry);
+
+        //A flush inside the loop may have taken this slot, so free it only while it is still the old datagram | Döngü içindeki bir flush bu slotu almış olabilir, o yüzden hâlâ eski datagram ise serbest bırak
+        if(entry -> in_use && entry -> sequence == old_sequence)
+            cache_free_entry(entry);
+
         session -> resends++;
+        budget--;
     }
     send -> resend_count = 0;
 

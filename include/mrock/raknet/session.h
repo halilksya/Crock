@@ -16,6 +16,8 @@
 #define RAKNET_PING_INTERVAL_MS 5000
 //Fixed timeout, there is no RTT estimation yet | Sabit süre, henüz RTT tahmini yok
 #define RAKNET_RESEND_TIMEOUT_MS 500
+//Resend datagrams per tick, so one timeout scan cannot flood the socket | Tick başına tekrar gönderilen datagram sayısı, tek bir tarama socket'i boğmasın
+#define RAKNET_MAX_RESENDS_PER_TICK 32
 
 typedef enum
 {

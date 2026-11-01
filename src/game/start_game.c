@@ -198,14 +198,12 @@ int mc_send_jigsaw_structure_data(mc_connection_t *connection)
     bs_t stream;
     bs_write_init(&stream, body, sizeof(body));
 
+    //Four empty compound lists, what a vanilla server sends with no jigsaw rules defined | Dört boş compound listesi, hiç jigsaw kuralı olmayan bir vanilla sunucunun gönderdiği şey
     mc_nbt_compound_start(&stream, "");
-
-    //The client looks these up by name, so the spelling has to match exactly | Client bunları isimle arıyor, o yüzden yazımları birebir aynı olmalı
-    mc_nbt_empty_list(&stream, "processors", MC_NBT_TAG_COMPOUND);
-    mc_nbt_empty_list(&stream, "template_pools", MC_NBT_TAG_COMPOUND);
-    mc_nbt_empty_list(&stream, "jigsaws", MC_NBT_TAG_COMPOUND);
-    mc_nbt_empty_list(&stream, "structure_sets", MC_NBT_TAG_COMPOUND);
-
+    mc_nbt_empty_list(&stream, "processors", 0x0A);
+    mc_nbt_empty_list(&stream, "template_pools", 0x0A);
+    mc_nbt_empty_list(&stream, "jigsaws", 0x0A);
+    mc_nbt_empty_list(&stream, "structure_sets", 0x0A);
     mc_nbt_compound_end(&stream);
 
     if(stream.err)
