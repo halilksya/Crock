@@ -3,7 +3,7 @@
 
 #include "mrock/util/bstream.h"
 
-//RakNet message ID that wraps a game packet batch | Oyun paketleri batch'ini saran Raknet mesaj ID'si
+//Batch header byte, the same on every transport | Batch başlık baytı, her taşımada aynı
 #define MC_BATCH_HEADER 0xFE
 
 //Algorithm byte, present only when compression is enabled | Algoritma baytı sadece sıkıştırma açıkken pakette yer alıyor

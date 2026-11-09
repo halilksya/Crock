@@ -22,7 +22,7 @@ typedef void(*mc_close_callback_t)(void *transport, const char *reason);
 
 typedef struct
 {
-    //Opaque to the game layer; RakNet passes its session here | Oyun katmanı için opak; RakNet kendi session'ını veriyor
+    //Opaque to the game layer; the transport passes its own session here | Oyun katmanı için opak; taşıma kendi oturumunu buraya veriyor
     void *transport;
 
     mc_send_callback_t send;

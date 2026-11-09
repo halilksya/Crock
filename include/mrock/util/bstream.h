@@ -32,14 +32,14 @@ static inline void bs_reset(bs_t *s)
 }
 
 //Reads never report failure; check s -> err once after the whole parse | Okumalar hata dönmüyor; bütün parse bittikten sonra s -> err'i bir kez kontrol et
-//_be is the RakNet layer, _le the game layer; mixing them shifts the parse silently | _be RakNet katmanı, _le oyun katmanı; karıştırırsan parse sessizce kayıyor
+//Most of the game layer is _le; a few fields like the login protocol version are _be | Oyun katmanının çoğu _le; login protokol sürümü gibi birkaç alan _be
 uint8_t  bs_ru8(bs_t *s);
 uint16_t bs_ru16be(bs_t *s);
 uint32_t bs_ru32be(bs_t *s);
 uint64_t bs_ru64be(bs_t *s);
 bool bs_rbool(bs_t *s);
 
-//24-bit triad used for RakNet sequence numbers, little-endian unlike the rest of that layer | RakNet sequence numaraları için 24-bit triad, o katmanın geri kalanının aksine little-endian
+//24-bit little-endian value; currently only exercised by the tests | 24 bitlik little-endian değer; şu an sadece testlerde kullanılıyor
 uint32_t bs_ru24le(bs_t *s);
 
 uint16_t bs_ru16le(bs_t *s);

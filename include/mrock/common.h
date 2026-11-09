@@ -29,7 +29,7 @@ void log_hexdump(log_level_t level, const char *tag, const void *data, size_t le
 //Monotonic clock, since timeouts and resend timers depend on it | Monotonik saat, çünkü timeout ve resend sayaçları buna bağlı
 uint64_t mr_now_ms(void);
 
-//RakNet sequence numbers are 24-bit and wrap at 0xFFFFFF, so plain < and > are wrong | RakNet sequence numaraları 24 bit ve 0xFFFFFF'te başa dönüyor, o yüzden düz < ve > yanlış sonuç veriyor
+//24-bit counters wrap at 0xFFFFFF, so plain < and > give wrong answers near the wrap | 24 bitlik sayaçlar 0xFFFFFF'te başa dönüyor, o yüzden düz < ve > dönüş noktasında yanlış sonuç veriyor
 //The rule: if the distance between two values is under half the range, the first one is ahead | Kural: iki değer arası mesafe aralığın yarısından azsa, ilki öndedir
 #define MR_TRIAD_MAX 0x1000000u
 #define MR_TRIAD_HALF 0x800000u
