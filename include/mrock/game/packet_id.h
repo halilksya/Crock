@@ -24,8 +24,8 @@
 #define MC_PACKET_CREATIVE_CONTENT 0x91
 #define MC_PACKET_ITEM_REGISTRY 0xA2
 #define MC_PACKET_REQUEST_NETWORK_SETTINGS 0xC1
-#define MC_PACKET_JIGSAW_STRUCTURE_DATA 0xD5
-#define MC_PACKET_VOXEL_SHAPES 0xED
+#define MC_PACKET_JIGSAW_STRUCTURE_DATA 0x139
+#define MC_PACKET_VOXEL_SHAPES 0x151
 
 //PlayStatus field values, written as big-endian int32 | PlayStatus alan değerleri big-endian int32 olarak yazılıyor
 #define MC_PLAY_STATUS_LOGIN_SUCCESS 0
